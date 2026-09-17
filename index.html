@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GridCut - 智能快速切圖工具</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Main Style Sheet -->
+    <link rel="stylesheet" href="style.css">
+    <!-- JSZip Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Panel -->
+        <aside class="sidebar">
+            <div class="brand">
+                <i class="fa-solid fa-scissors brand-icon"></i>
+                <div class="brand-text">
+                    <h1>GridCut</h1>
+                    <span>智能快速切圖工具</span>
+                </div>
+            </div>
+
+            <!-- Upload Zone -->
+            <div class="upload-section">
+                <div class="drop-zone" id="dropZone">
+                    <input type="file" id="fileInput" accept="image/*" style="display: none;">
+                    <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
+                    <p class="upload-text">拖放圖片至此或<span>點擊上傳</span></p>
+                    <p class="upload-hint">支援 PNG, JPG, WEBP 等格式</p>
+                </div>
+            </div>
+
+            <!-- Configuration Form -->
+            <div class="config-section card">
+                <h2 class="section-title"><i class="fa-solid fa-sliders"></i> 切圖設定</h2>
+                
+                <div class="input-group-row">
+                    <div class="input-field">
+                        <label for="tileWidth">單圖寬度 (px)</label>
+                        <input type="number" id="tileWidth" value="128" min="8" max="4096">
+                    </div>
+                    <div class="input-field">
+                        <label for="tileHeight">單圖高度 (px)</label>
+                        <input type="number" id="tileHeight" value="128" min="8" max="4096">
+                    </div>
+                </div>
+
+                <div class="input-field">
+                    <label for="exportFormat">輸出格式</label>
+                    <select id="exportFormat">
+                        <option value="image/png">PNG (.png)</option>
+                        <option value="image/jpeg">JPEG (.jpg)</option>
+                        <option value="image/webp">WEBP (.webp)</option>
+                    </select>
+                </div>
+
+                <div class="input-field">
+                    <label for="filePrefix">輸出檔名前碼</label>
+                    <input type="text" id="filePrefix" value="tile_" placeholder="例如 tile_">
+                </div>
+            </div>
+
+            <!-- Stats/Info Card -->
+            <div class="info-section card" id="infoCard">
+                <h2 class="section-title"><i class="fa-solid fa-chart-pie"></i> 裁切資訊</h2>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">原始尺寸</span>
+                        <span class="info-value" id="origSize">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">裁切區域</span>
+                        <span class="info-value" id="cropSize">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">橫向切數</span>
+                        <span class="info-value" id="colsCount">-</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">縱向切數</span>
+                        <span class="info-value" id="rowsCount">-</span>
+                    </div>
+                </div>
+                <div class="total-badge">
+                    <span>預計切出小圖張數：</span>
+                    <strong id="totalCount">0</strong>
+                </div>
+            </div>
+
+            <!-- Action Button -->
+            <button id="downloadBtn" class="btn btn-primary btn-block" disabled>
+                <i class="fa-solid fa-file-zipper"></i> 開始切圖並下載 ZIP
+            </button>
+
+            <!-- Local Server Address Info -->
+            <div class="local-server-info" style="margin-top: 20px; padding: 12px; font-size: 12px; opacity: 0.8; text-align: center; border-top: 1px solid rgba(255,255,255,0.08); color: #94a3b8;">
+                <i class="fa-solid fa-server" style="color: #10b981; margin-right: 6px;"></i>本地伺服器：<a href="http://127.0.0.1:5600/" target="_blank" style="color: #10b981; text-decoration: none; font-weight: 500; transition: color 0.2s;">http://127.0.0.1:5600/</a>
+            </div>
+        </aside>
+
+        <!-- Main Workspace -->
+        <main class="workspace">
+            <div class="workspace-header">
+                <div class="status-indicator">
+                    <span class="dot" id="statusDot"></span>
+                    <span id="statusText">請先上傳圖片以開始</span>
+                </div>
+                <div class="workspace-actions">
+                    <button id="resetCropBtn" class="btn btn-secondary" disabled>
+                        <i class="fa-solid fa-arrows-to-eye"></i> 重設裁切範圍
+                    </button>
+                </div>
+            </div>
+
+            <div class="canvas-container" id="canvasContainer">
+                <div class="placeholder-view" id="placeholderView">
+                    <i class="fa-regular fa-image placeholder-icon"></i>
+                    <p>尚未載入圖片，請從左側上傳</p>
+                </div>
+
+                <div class="editor-wrapper" id="editorWrapper" style="display: none;">
+                    <img id="sourceImage" alt="Source" draggable="false">
+                    <div class="shading-overlay" id="shadingOverlay"></div>
+                    <div class="crop-box" id="cropBox">
+                        <!-- Canvas inside crop box to render grid pattern dynamically -->
+                        <canvas id="gridCanvas"></canvas>
+                        
+                        <!-- Drag handles -->
+                        <div class="handle handle-nw" data-handle="nw"></div>
+                        <div class="handle handle-n" data-handle="n"></div>
+                        <div class="handle handle-ne" data-handle="ne"></div>
+                        <div class="handle handle-e" data-handle="e"></div>
+                        <div class="handle handle-se" data-handle="se"></div>
+                        <div class="handle handle-s" data-handle="s"></div>
+                        <div class="handle handle-sw" data-handle="sw"></div>
+                        <div class="handle handle-w" data-handle="w"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal/Loader for slicing progress -->
+            <div class="modal-overlay" id="loaderModal">
+                <div class="modal-content">
+                    <div class="spinner"></div>
+                    <h3>正在切圖中...</h3>
+                    <p id="progressText">準備開始...</p>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="progressBar"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Application Script -->
+    <script src="app.js"></script>
+</body>
+</html>
