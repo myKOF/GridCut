@@ -11,7 +11,7 @@
     <!-- FontAwesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Main Style Sheet -->
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=2.3.0">
     <!-- JSZip Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
@@ -359,11 +359,21 @@
                         <div class="handle handle-w" data-handle="w"></div>
                     </div>
                 </div>
+
+                <!-- Floating Zoom Toolbar in Canvas -->
+                <div class="canvas-zoom-controls" id="canvasZoomControls" style="display: none;">
+                    <button id="zoomOutBtn" class="zoom-btn" title="縮小 (滾輪向下)"><i class="fa-solid fa-minus"></i></button>
+                    <span id="zoomLevelDisplay" class="zoom-level" title="點擊重設 100%">100%</span>
+                    <button id="zoomInBtn" class="zoom-btn" title="放大 (滾輪向上)"><i class="fa-solid fa-plus"></i></button>
+                    <button id="resetViewBtn" class="zoom-btn" title="重設視角與縮放"><i class="fa-solid fa-expand"></i></button>
+                </div>
             </div>
 
             <!-- Workspace Footer Hint -->
             <div class="workspace-footer">
                 <div class="shortcut-hints" id="shortcutHints">
+                    <span><kbd>滾輪</kbd> 縮放</span>
+                    <span><kbd>中鍵/右鍵拖曳</kbd> 平移畫布</span>
                     <span><kbd>點選</kbd> 選中框體</span>
                     <span><kbd>拖曳</kbd> 個別移動位置</span>
                     <span><kbd>手柄</kbd> 個別縮放尺寸</span>
@@ -388,6 +398,6 @@
     </div>
 
     <!-- Application Script (ES Module) -->
-    <script type="module" src="app.js?v=2.2.0"></script>
+    <script type="module" src="app.js?v=2.3.0"></script>
 </body>
 </html>

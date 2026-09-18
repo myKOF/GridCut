@@ -1,9 +1,9 @@
 // GridCut - Core Application Logic (Decoupled CV Pipeline + Modern Atlas Editor)
 
-import { AtlasAnalyzer } from './src/analyzer/AtlasAnalyzer.js';
-import { MetadataDetector } from './src/analyzer/MetadataDetector.js';
-import { AtlasSlicerEditor } from './src/editor/AtlasSlicerEditor.js';
-import { AtlasExporter } from './src/editor/AtlasExporter.js';
+import { AtlasAnalyzer } from './src/analyzer/AtlasAnalyzer.js?v=2.3.0';
+import { MetadataDetector } from './src/analyzer/MetadataDetector.js?v=2.3.0';
+import { AtlasSlicerEditor } from './src/editor/AtlasSlicerEditor.js?v=2.3.0';
+import { AtlasExporter } from './src/editor/AtlasExporter.js?v=2.3.0';
 
 document.addEventListener('DOMContentLoaded', () => {
     // --- DOM ELEMENTS ---
@@ -106,6 +106,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const progressText = document.getElementById('progressText');
     const progressBar = document.getElementById('progressBar');
 
+    // Canvas Zoom Controls
+    const canvasZoomControls = document.getElementById('canvasZoomControls');
+    const zoomOutBtn = document.getElementById('zoomOutBtn');
+    const zoomInBtn = document.getElementById('zoomInBtn');
+    const zoomLevelDisplay = document.getElementById('zoomLevelDisplay');
+    const resetViewBtn = document.getElementById('resetViewBtn');
+
     // --- APP STATE ---
     let originalImg = null;
     let currentImageFileName = 'atlas.png';
@@ -152,6 +159,9 @@ document.addEventListener('DOMContentLoaded', () => {
             multiBoxContainer.style.display = 'block';
             cropBox.style.display = 'none';
             shadingOverlay.style.display = 'none';
+            if (gridCtx && gridCanvas) {
+                gridCtx.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
+            }
 
             if (originalImg && slicerEditor.getSprites().length === 0) {
                 runAutoDetection();
@@ -258,6 +268,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sourceImage.src = originalImg.src;
         placeholderView.style.display = 'none';
         editorWrapper.style.display = 'inline-block';
+        if (canvasZoomControls) canvasZoomControls.style.display = 'flex';
 
         downloadBtn.disabled = false;
         if (exportJsonBtn) exportJsonBtn.disabled = false;
@@ -278,6 +289,7 @@ document.addEventListener('DOMContentLoaded', () => {
             calculateScale();
             slicerEditor.setSource(originalImg, scaleRatio);
             resetCropToFull();
+            resetView();
             if (currentMode === 'auto') {
                 runAutoDetection();
             }
@@ -673,8 +685,16 @@ document.addEventListener('DOMContentLoaded', () => {
         scaleRatio = originalImg.width / renderW;
 
         cropBoxState = { x: 0, y: 0, w: renderW, h: renderH };
-        updateCropBoxUI();
-        recalculateAndDrawGrid();
+        if (currentMode === 'grid') {
+            updateCropBoxUI();
+            recalculateAndDrawGrid();
+        } else {
+            cropBox.style.display = 'none';
+            shadingOverlay.style.display = 'none';
+            if (gridCtx && gridCanvas) {
+                gridCtx.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
+            }
+        }
     }
 
     resetCropBtn.addEventListener('click', resetCropToFull);
@@ -683,6 +703,7 @@ document.addEventListener('DOMContentLoaded', () => {
     cropBox.addEventListener('touchstart', startGridDrag, { passive: false });
 
     function startGridDrag(e) {
+        if (e.button === 1 || e.button === 2) return;
         if (e.target.classList.contains('handle')) {
             gridDragType = e.target.dataset.handle;
         } else if (e.target === cropBox || e.target === gridCanvas) {
@@ -702,8 +723,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleGridDragMove(clientX, clientY, e) {
         e.preventDefault();
-        const deltaX = clientX - gridStartX;
-        const deltaY = clientY - gridStartY;
+        const deltaX = (clientX - gridStartX) / currentZoom;
+        const deltaY = (clientY - gridStartY) / currentZoom;
         const containerW = sourceImage.clientWidth;
         const containerH = sourceImage.clientHeight;
         const minBoxSize = 30;
@@ -828,6 +849,136 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('mouseup', endGridDrag);
     window.addEventListener('touchend', endGridDrag);
+
+    // ============================================================
+    // VIEWPORT PAN & ZOOM SYSTEM (中鍵滾輪縮放 + 中鍵/右鍵拖曳平移)
+    // ============================================================
+    let currentZoom = 1.0;
+    let panX = 0;
+    let panY = 0;
+    let isPanning = false;
+    let panStartX = 0;
+    let panStartY = 0;
+    let startPanX = 0;
+    let startPanY = 0;
+
+    function applyTransform() {
+        if (!editorWrapper) return;
+        editorWrapper.style.transform = `translate(${panX}px, ${panY}px) scale(${currentZoom})`;
+        slicerEditor.setZoom(currentZoom);
+        if (zoomLevelDisplay) {
+            zoomLevelDisplay.textContent = `${Math.round(currentZoom * 100)}%`;
+        }
+    }
+
+    function resetView() {
+        if (!originalImg || editorWrapper.style.display === 'none') return;
+        currentZoom = 1.0;
+        const ew = editorWrapper.offsetWidth || 500;
+        const eh = editorWrapper.offsetHeight || 500;
+        const cw = canvasContainer.clientWidth || 800;
+        const ch = canvasContainer.clientHeight || 600;
+        panX = Math.round((cw - ew * currentZoom) / 2);
+        panY = Math.round((ch - eh * currentZoom) / 2);
+        applyTransform();
+    }
+
+    function zoomTo(newZoom, centerX, centerY) {
+        if (!originalImg || editorWrapper.style.display === 'none') return;
+        const targetZoom = Math.min(Math.max(0.1, newZoom), 25.0);
+        if (Math.abs(targetZoom - currentZoom) < 0.001) return;
+
+        let mouseX = centerX;
+        let mouseY = centerY;
+        if (typeof mouseX !== 'number' || typeof mouseY !== 'number') {
+            mouseX = canvasContainer.clientWidth / 2;
+            mouseY = canvasContainer.clientHeight / 2;
+        }
+
+        const imgX = (mouseX - panX) / currentZoom;
+        const imgY = (mouseY - panY) / currentZoom;
+
+        panX = mouseX - imgX * targetZoom;
+        panY = mouseY - imgY * targetZoom;
+        currentZoom = targetZoom;
+
+        applyTransform();
+    }
+
+    // 1. 中鍵滾輪放大縮小
+    canvasContainer.addEventListener('wheel', (e) => {
+        if (!originalImg || editorWrapper.style.display === 'none') return;
+        e.preventDefault();
+
+        const rect = canvasContainer.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        const zoomFactor = e.deltaY < 0 ? 1.15 : (1 / 1.15);
+        zoomTo(currentZoom * zoomFactor, mouseX, mouseY);
+    }, { passive: false });
+
+    // 2. 中鍵及右鍵按下拖曳圖片預覽區 (Capture Phase 確保優先權)
+    canvasContainer.addEventListener('mousedown', (e) => {
+        if (e.button === 1 || e.button === 2) {
+            e.preventDefault();
+            e.stopPropagation();
+            isPanning = true;
+            panStartX = e.clientX;
+            panStartY = e.clientY;
+            startPanX = panX;
+            startPanY = panY;
+            canvasContainer.classList.add('is-panning');
+        }
+    }, { capture: true });
+
+    window.addEventListener('mousemove', (e) => {
+        if (isPanning) {
+            e.preventDefault();
+            const dx = e.clientX - panStartX;
+            const dy = e.clientY - panStartY;
+            panX = startPanX + dx;
+            panY = startPanY + dy;
+            applyTransform();
+        }
+    });
+
+    window.addEventListener('mouseup', (e) => {
+        if (isPanning && (e.button === 1 || e.button === 2)) {
+            isPanning = false;
+            canvasContainer.classList.remove('is-panning');
+        }
+    });
+
+    // 禁用 canvas 預設右鍵選單以支援右鍵拖曳
+    canvasContainer.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+    });
+
+    // 禁用中鍵預設自動滾動箭頭
+    canvasContainer.addEventListener('auxclick', (e) => {
+        if (e.button === 1) e.preventDefault();
+    });
+
+    // 浮動縮放工具列按鈕
+    if (zoomInBtn) {
+        zoomInBtn.addEventListener('click', () => {
+            zoomTo(currentZoom * 1.25);
+        });
+    }
+    if (zoomOutBtn) {
+        zoomOutBtn.addEventListener('click', () => {
+            zoomTo(currentZoom / 1.25);
+        });
+    }
+    if (zoomLevelDisplay) {
+        zoomLevelDisplay.addEventListener('click', () => {
+            zoomTo(1.0);
+        });
+    }
+    if (resetViewBtn) {
+        resetViewBtn.addEventListener('click', resetView);
+    }
 
     // ============================================================
     // EXPORT SYSTEM (Selected PNG, Atlas JSON, Full ZIP)
@@ -996,6 +1147,9 @@ document.addEventListener('DOMContentLoaded', () => {
             loaderModal.classList.remove('active');
         }
     });
+
+    // Initialize in auto mode
+    setMode('auto');
 
     // --- AUTOMATED TEST HOOK (?image=... or ?test in URL) ---
     const urlParams = new URLSearchParams(window.location.search);

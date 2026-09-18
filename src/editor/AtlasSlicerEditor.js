@@ -7,6 +7,7 @@ export class AtlasSlicerEditor {
     constructor(containerEl, options = {}) {
         this.container = containerEl;
         this.scaleRatio = 1.0; // 原始影像像素 / 渲染 CSS 像素
+        this.zoom = 1.0; // 畫布縮放倍率
         this.sourceImage = null;
         
         // 框體清單：每項格式：
@@ -46,6 +47,14 @@ export class AtlasSlicerEditor {
     setScaleRatio(ratio) {
         this.scaleRatio = ratio;
         this.render();
+    }
+
+    setZoom(zoom) {
+        this.zoom = zoom || 1.0;
+    }
+
+    getZoom() {
+        return this.zoom || 1.0;
     }
 
     /**
@@ -427,24 +436,6 @@ export class AtlasSlicerEditor {
             el.style.width = `${cw}px`;
             el.style.height = `${ch}px`;
 
-            // Badge 顯示 ID, 寬高與信心度
-            const badge = document.createElement('div');
-            badge.className = 'box-badge';
-            const confPct = Math.round((s.confidence || 0.9) * 100);
-            badge.innerHTML = `<span>${s.id}</span> <span class="badge-dim">${s.width}×${s.height}</span> <span class="badge-conf">${confPct}%</span>`;
-            el.appendChild(badge);
-
-            // 單框刪除按鈕
-            const delBtn = document.createElement('button');
-            delBtn.className = 'box-delete-btn';
-            delBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
-            delBtn.title = '刪除此框 (Delete)';
-            delBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.deleteSprite(s.id);
-            });
-            el.appendChild(delBtn);
-
             // 8 個縮放手柄
             const handles = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
             handles.forEach(h => {
@@ -499,17 +490,19 @@ export class AtlasSlicerEditor {
         }
 
         const onPointerDown = (e) => {
+            if (e.button === 1 || e.button === 2) return;
             if (!this.isDrawingMode) return;
             const target = e.target;
-            if (target.classList.contains('box-handle') || target.closest('.box-delete-btn')) return;
+            if (target.classList.contains('box-handle')) return;
 
             const rect = this.container.getBoundingClientRect();
             const clientX = e.touches ? e.touches[0].clientX : e.clientX;
             const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            const zoom = this.zoom || 1.0;
 
             this.drawingStart = {
-                x: clientX - rect.left,
-                y: clientY - rect.top
+                x: (clientX - rect.left) / zoom,
+                y: (clientY - rect.top) / zoom
             };
 
             this.previewEl.style.display = 'block';
@@ -532,9 +525,10 @@ export class AtlasSlicerEditor {
             const rect = this.container.getBoundingClientRect();
             const clientX = e.touches ? e.touches[0].clientX : e.clientX;
             const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            const zoom = this.zoom || 1.0;
 
-            const curX = clientX - rect.left;
-            const curY = clientY - rect.top;
+            const curX = (clientX - rect.left) / zoom;
+            const curY = (clientY - rect.top) / zoom;
 
             const left = Math.min(this.drawingStart.x, curX);
             const top = Math.min(this.drawingStart.y, curY);
@@ -580,8 +574,8 @@ export class AtlasSlicerEditor {
     }
 
     _onBoxMouseDown(e, spriteId) {
+        if (e.button === 1 || e.button === 2) return;
         if (this.isDrawingMode) return;
-        if (e.target.closest('.box-delete-btn')) return;
 
         const isMulti = e.shiftKey || e.ctrlKey;
         if (!this.selectedIds.has(spriteId)) {
@@ -621,8 +615,9 @@ export class AtlasSlicerEditor {
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
 
-        const dxCss = clientX - this.activeDrag.startX;
-        const dyCss = clientY - this.activeDrag.startY;
+        const zoom = this.zoom || 1.0;
+        const dxCss = (clientX - this.activeDrag.startX) / zoom;
+        const dyCss = (clientY - this.activeDrag.startY) / zoom;
 
         const ratio = this.scaleRatio || 1.0;
         const dxReal = dxCss * ratio;
@@ -696,12 +691,6 @@ export class AtlasSlicerEditor {
         el.style.top = `${sprite.y / ratio}px`;
         el.style.width = `${sprite.width / ratio}px`;
         el.style.height = `${sprite.height / ratio}px`;
-
-        const badge = el.querySelector('.box-badge');
-        if (badge) {
-            const confPct = Math.round((sprite.confidence || 0.9) * 100);
-            badge.innerHTML = `<span>${sprite.id}</span> <span class="badge-dim">${sprite.width}×${sprite.height}</span> <span class="badge-conf">${confPct}%</span>`;
-        }
     }
 
     _notifyChanges(pushHistory = false) {
