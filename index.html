@@ -30,16 +30,154 @@
             <!-- Upload Zone -->
             <div class="upload-section">
                 <div class="drop-zone" id="dropZone">
-                    <input type="file" id="fileInput" accept="image/*" style="display: none;">
+                    <input type="file" id="fileInput" accept="image/*,.json,application/json" style="display: none;">
                     <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
-                    <p class="upload-text">拖放圖片至此或<span>點擊上傳</span></p>
-                    <p class="upload-hint">支援 PNG, JPG, WEBP 等格式</p>
+                    <p class="upload-text">拖放圖片或 JSON 至此或<span>點擊上傳</span></p>
+                    <p class="upload-hint">支援 PNG, JPG, WebP 圖片或 Atlas JSON</p>
                 </div>
             </div>
 
-            <!-- Configuration Form -->
-            <div class="config-section card">
-                <h2 class="section-title"><i class="fa-solid fa-sliders"></i> 切圖設定</h2>
+            <!-- Mode Switcher Tabs -->
+            <div class="mode-tabs-container">
+                <div class="mode-tabs">
+                    <button class="mode-tab active" id="tabAutoMode" data-mode="auto">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> 智能多框識別
+                    </button>
+                    <button class="mode-tab" id="tabGridMode" data-mode="grid">
+                        <i class="fa-solid fa-border-all"></i> 固定/可調網格
+                    </button>
+                </div>
+            </div>
+
+            <!-- Configuration: Smart Multi-Box Mode -->
+            <div class="config-section card" id="autoConfigSection">
+                <h2 class="section-title"><i class="fa-solid fa-wand-magic-sparkles"></i> 智能圖集識別</h2>
+                <p class="section-desc">自動分析圖集中不同尺寸獨立圖形，並產生個別獨立可微調的框體。</p>
+
+                <div class="input-field" style="margin-bottom: 12px;">
+                    <label for="bgDetectType"><i class="fa-solid fa-eye-dropper"></i> 背景識別模式</label>
+                    <select id="bgDetectType" style="width: 100%; padding: 8px 10px; border-radius: 6px; background: rgba(15,23,42,0.85); border: 1px solid rgba(255,255,255,0.15); color: #fff; font-size: 13px;">
+                        <option value="auto">自動判斷 (Auto)</option>
+                        <option value="alpha">透明背景 PNG (Alpha 通道)</option>
+                        <option value="dark" selected>深色 / 暗底截圖 (Dark / Checkerboard)</option>
+                        <option value="light">淺色 / 白底截圖 (Light / White)</option>
+                    </select>
+                </div>
+
+                <div class="input-group-row">
+                    <div class="input-field">
+                        <div class="label-with-val">
+                            <label for="erosionRadius" title="利用形態學腐蝕切斷緊密相鄰的小圖">圖塊分離強度</label>
+                            <span class="badge-val" id="erosionRadiusVal">0</span>
+                        </div>
+                        <input type="range" id="erosionRadius" min="0" max="5" value="0">
+                    </div>
+                    <div class="input-field">
+                        <div class="label-with-val">
+                            <label for="bgTolerance" title="色彩與背景差異門檻">背景容差門檻</label>
+                            <span class="badge-val" id="bgToleranceVal">28</span>
+                        </div>
+                        <input type="range" id="bgTolerance" min="5" max="100" value="28">
+                    </div>
+                </div>
+
+                <div class="input-group-row">
+                    <div class="input-field">
+                        <div class="label-with-val">
+                            <label for="alphaThreshold">透明度門檻 (PNG)</label>
+                            <span class="badge-val" id="alphaThresholdVal">15</span>
+                        </div>
+                        <input type="range" id="alphaThreshold" min="1" max="120" value="15">
+                    </div>
+                    <div class="input-field">
+                        <label for="minSize">最小尺寸 (px)</label>
+                        <input type="number" id="minSize" value="16" min="4" max="512">
+                    </div>
+                </div>
+
+                <div class="input-group-row">
+                    <div class="input-field">
+                        <div class="label-with-val">
+                            <label for="morphCloseRadius" title="形態學閉合半徑：消除內部孔洞與斷線，凝聚發光與細微部件">形態學閉合</label>
+                            <span class="badge-val" id="morphCloseRadiusVal">0px</span>
+                        </div>
+                        <input type="range" id="morphCloseRadius" min="0" max="8" value="0">
+                    </div>
+                    <div class="input-field">
+                        <label for="groupDistance" title="幾何聚合間隙：將緊密相鄰的衛星粒子、特效拖尾聚合至主體">聚合間距 (px)</label>
+                        <input type="number" id="groupDistance" value="0" min="0" max="30">
+                    </div>
+                </div>
+
+                <div class="input-group-row">
+                    <div class="input-field">
+                        <label for="mergeGap" title="相距小於此像素的小圖塊會自動合併為同一圖示 (已嚴格保護獨立主體不互溶)">合併間距 (px)</label>
+                        <input type="number" id="mergeGap" value="0" min="0" max="30">
+                    </div>
+                    <div class="input-field">
+                        <label for="boxPadding">外擴留白 (px)</label>
+                        <input type="number" id="boxPadding" value="0" min="0" max="20">
+                    </div>
+                </div>
+
+                <div class="btn-group-row">
+                    <button id="runAutoDetectBtn" class="btn btn-accent btn-sm" disabled>
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> 重新自動識別
+                    </button>
+                    <button id="toggleDrawBoxBtn" class="btn btn-secondary btn-sm" disabled title="點擊後可在圖片上拖曳滑鼠拉出新框">
+                        <i class="fa-solid fa-plus"></i> 手動繪框
+                    </button>
+                </div>
+
+                <!-- Selected Box Inspector -->
+                <div class="selected-box-card" id="selectedBoxCard" style="display: none;">
+                    <div class="selected-box-header">
+                        <span class="selected-box-title" id="selectedBoxTitle">框體 #1</span>
+                        <span class="badge-confidence" id="selectedBoxConfidence" title="信心分數">95%</span>
+                        <button id="deleteSelectedBoxBtn" class="btn-icon-danger" title="刪除此框 (Delete / Backspace)">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
+                    <div class="input-group-row compact">
+                        <div class="input-field">
+                            <label>X (px)</label>
+                            <input type="number" id="boxPropX" min="0">
+                        </div>
+                        <div class="input-field">
+                            <label>Y (px)</label>
+                            <input type="number" id="boxPropY" min="0">
+                        </div>
+                        <div class="input-field">
+                            <label>寬 W</label>
+                            <input type="number" id="boxPropW" min="4">
+                        </div>
+                        <div class="input-field">
+                            <label>高 H</label>
+                            <input type="number" id="boxPropH" min="4">
+                        </div>
+                    </div>
+                    <div class="confidence-detail-row" id="confDetailRow" style="font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; padding: 4px 6px; background: rgba(0,0,0,0.3); border-radius: 4px; border: 1px solid rgba(255,255,255,0.06);">
+                        <span id="confBorderText">邊界乾淨: 1.0</span>
+                        <span id="confGutterText">通道隔離: 1.0</span>
+                        <span id="confDensityText">內部密度: 65%</span>
+                    </div>
+                    <div class="btn-group-row compact" style="margin-top: 4px;">
+                        <button id="exportSelectedBtn" class="btn btn-secondary btn-sm" title="單獨下載選中的這張圖片 (保留透明度)">
+                            <i class="fa-solid fa-image"></i> 匯出選中圖
+                        </button>
+                        <button id="splitSelectedHBtn" class="btn btn-secondary btn-sm" title="水平切成上下兩半">
+                            <i class="fa-solid fa-arrows-split-up-and-left fa-rotate-90"></i> 水平切
+                        </button>
+                        <button id="splitSelectedVBtn" class="btn btn-secondary btn-sm" title="垂直切成左右兩半">
+                            <i class="fa-solid fa-arrows-split-up-and-left"></i> 垂直切
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Configuration: Grid Slicing Mode -->
+            <div class="config-section card" id="gridConfigSection" style="display: none;">
+                <h2 class="section-title"><i class="fa-solid fa-sliders"></i> 網格切圖設定</h2>
                 
                 <div class="input-group-row">
                     <div class="input-field">
@@ -51,43 +189,77 @@
                         <input type="number" id="tileHeight" value="128" min="8" max="4096">
                     </div>
                 </div>
+                <p class="section-hint"><i class="fa-solid fa-circle-info"></i> 可直接在畫面上拖曳格線進行微調</p>
+            </div>
 
-                <div class="input-field">
-                    <label for="exportFormat">輸出格式</label>
-                    <select id="exportFormat">
-                        <option value="image/png">PNG (.png)</option>
-                        <option value="image/jpeg">JPEG (.jpg)</option>
-                        <option value="image/webp">WEBP (.webp)</option>
-                    </select>
-                </div>
-
-                <div class="input-field">
-                    <label for="filePrefix">輸出檔名前碼</label>
-                    <input type="text" id="filePrefix" value="tile_" placeholder="例如 tile_">
+            <!-- Common Export Settings -->
+            <div class="config-section card">
+                <h2 class="section-title"><i class="fa-solid fa-download"></i> 導出設定</h2>
+                <div class="input-group-row">
+                    <div class="input-field">
+                        <label for="exportFormat">輸出格式</label>
+                        <select id="exportFormat">
+                            <option value="image/png">PNG (.png)</option>
+                            <option value="image/jpeg">JPEG (.jpg)</option>
+                            <option value="image/webp">WEBP (.webp)</option>
+                        </select>
+                    </div>
+                    <div class="input-field">
+                        <label for="filePrefix">檔名前碼</label>
+                        <input type="text" id="filePrefix" value="tile_" placeholder="例如 tile_">
+                    </div>
                 </div>
             </div>
 
             <!-- Stats/Info Card -->
             <div class="info-section card" id="infoCard">
-                <h2 class="section-title"><i class="fa-solid fa-chart-pie"></i> 裁切資訊</h2>
-                <div class="info-grid">
-                    <div class="info-item">
-                        <span class="info-label">原始尺寸</span>
-                        <span class="info-value" id="origSize">-</span>
+                <h2 class="section-title"><i class="fa-solid fa-chart-pie"></i> 裁切統計</h2>
+                
+                <!-- Multi-box mode stats -->
+                <div id="autoModeStats">
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">原始圖片</span>
+                            <span class="info-value" id="origSizeAuto">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">識別小圖數</span>
+                            <span class="info-value" id="boxesCountAuto">0</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">尺寸類型</span>
+                            <span class="info-value" id="sizeTypesCountAuto">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">當前選中</span>
+                            <span class="info-value" id="selectedBoxStat">-</span>
+                        </div>
                     </div>
-                    <div class="info-item">
-                        <span class="info-label">裁切區域</span>
-                        <span class="info-value" id="cropSize">-</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">橫向切數</span>
-                        <span class="info-value" id="colsCount">-</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="info-label">縱向切數</span>
-                        <span class="info-value" id="rowsCount">-</span>
+                    <div class="size-distribution-container" id="sizeDistContainer"></div>
+                </div>
+
+                <!-- Grid mode stats -->
+                <div id="gridModeStats" style="display: none;">
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">原始尺寸</span>
+                            <span class="info-value" id="origSize">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">裁切區域</span>
+                            <span class="info-value" id="cropSize">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">橫向切數</span>
+                            <span class="info-value" id="colsCount">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">縱向切數</span>
+                            <span class="info-value" id="rowsCount">-</span>
+                        </div>
                     </div>
                 </div>
+
                 <div class="total-badge">
                     <span>預計切出小圖張數：</span>
                     <strong id="totalCount">0</strong>
@@ -98,9 +270,12 @@
             <button id="downloadBtn" class="btn btn-primary btn-block" disabled>
                 <i class="fa-solid fa-file-zipper"></i> 開始切圖並下載 ZIP
             </button>
+            <button id="exportJsonBtn" class="btn btn-secondary btn-block" disabled style="margin-top: 8px;" title="下載符合標準規格的 atlas.json 座標檔">
+                <i class="fa-solid fa-file-code"></i> 匯出 atlas.json
+            </button>
 
             <!-- Local Server Address Info -->
-            <div class="local-server-info" style="margin-top: 20px; padding: 12px; font-size: 12px; opacity: 0.8; text-align: center; border-top: 1px solid rgba(255,255,255,0.08); color: #94a3b8;">
+            <div class="local-server-info">
                 <i class="fa-solid fa-server" style="color: #10b981; margin-right: 6px;"></i>本地伺服器：<a href="http://127.0.0.1:5600/" target="_blank" style="color: #10b981; text-decoration: none; font-weight: 500; transition: color 0.2s;">http://127.0.0.1:5600/</a>
             </div>
         </aside>
@@ -113,9 +288,44 @@
                     <span id="statusText">請先上傳圖片以開始</span>
                 </div>
                 <div class="workspace-actions">
-                    <button id="resetCropBtn" class="btn btn-secondary" disabled>
-                        <i class="fa-solid fa-arrows-to-eye"></i> 重設裁切範圍
-                    </button>
+                    <!-- Actions for Auto Mode -->
+                    <div id="autoActions" class="action-btn-group">
+                        <button id="undoBtn" class="btn btn-secondary btn-sm" disabled title="復原操作 (Ctrl+Z)">
+                            <i class="fa-solid fa-rotate-left"></i>
+                        </button>
+                        <button id="redoBtn" class="btn btn-secondary btn-sm" disabled title="重做操作 (Ctrl+Y)">
+                            <i class="fa-solid fa-rotate-right"></i>
+                        </button>
+                        <span class="action-divider"></span>
+                        <button id="autoDetectHeaderBtn" class="btn btn-accent btn-sm" disabled title="重新自動分析圖集">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> 重新識別
+                        </button>
+                        <button id="drawBoxHeaderBtn" class="btn btn-secondary btn-sm" disabled title="點擊在畫布上拖曳新增自訂框體">
+                            <i class="fa-solid fa-plus"></i> 手動繪框
+                        </button>
+                        <button id="mergeBoxesBtn" class="btn btn-secondary btn-sm" disabled title="合併選中的多個框體 (Shift+點選進行多選)">
+                            <i class="fa-solid fa-object-group"></i> 合併
+                        </button>
+                        <button id="splitHBtn" class="btn btn-secondary btn-sm" disabled title="將選中框體水平上下分割">
+                            <i class="fa-solid fa-arrows-split-up-and-left fa-rotate-90"></i> 水平分割
+                        </button>
+                        <button id="splitVBtn" class="btn btn-secondary btn-sm" disabled title="將選中框體垂直左右分割">
+                            <i class="fa-solid fa-arrows-split-up-and-left"></i> 垂直分割
+                        </button>
+                        <button id="findUncertainBtn" class="btn btn-secondary btn-sm" disabled title="快速跳轉至下一張待確認的低/中信心度框體">
+                            <i class="fa-solid fa-triangle-exclamation" style="color: #f59e0b;"></i> 檢查待確認框
+                        </button>
+                        <span class="action-divider"></span>
+                        <button id="clearBoxesBtn" class="btn btn-secondary btn-sm" disabled title="清空畫面上所有框體">
+                            <i class="fa-solid fa-trash-can"></i> 清空
+                        </button>
+                    </div>
+                    <!-- Actions for Grid Mode -->
+                    <div id="gridActions" style="display: none;">
+                        <button id="resetCropBtn" class="btn btn-secondary" disabled>
+                            <i class="fa-solid fa-arrows-to-eye"></i> 重設裁切範圍
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -123,16 +333,22 @@
                 <div class="placeholder-view" id="placeholderView">
                     <i class="fa-regular fa-image placeholder-icon"></i>
                     <p>尚未載入圖片，請從左側上傳</p>
+                    <span class="placeholder-sub">支援整張圖集中大小不一的圖示自動識別</span>
                 </div>
 
                 <div class="editor-wrapper" id="editorWrapper" style="display: none;">
                     <img id="sourceImage" alt="Source" draggable="false">
-                    <div class="shading-overlay" id="shadingOverlay"></div>
-                    <div class="crop-box" id="cropBox">
-                        <!-- Canvas inside crop box to render grid pattern dynamically -->
+                    
+                    <!-- Multi-Box Container Layer (for Auto-detect Mode) -->
+                    <div class="multi-box-container" id="multiBoxContainer">
+                        <!-- Dynamic .auto-box elements will be rendered here -->
+                        <div class="drawing-box-preview" id="drawingBoxPreview" style="display: none;"></div>
+                    </div>
+
+                    <!-- Single Crop-Box Layer (for Grid Mode) -->
+                    <div class="shading-overlay" id="shadingOverlay" style="display: none;"></div>
+                    <div class="crop-box" id="cropBox" style="display: none;">
                         <canvas id="gridCanvas"></canvas>
-                        
-                        <!-- Drag handles -->
                         <div class="handle handle-nw" data-handle="nw"></div>
                         <div class="handle handle-n" data-handle="n"></div>
                         <div class="handle handle-ne" data-handle="ne"></div>
@@ -142,6 +358,18 @@
                         <div class="handle handle-sw" data-handle="sw"></div>
                         <div class="handle handle-w" data-handle="w"></div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Workspace Footer Hint -->
+            <div class="workspace-footer">
+                <div class="shortcut-hints" id="shortcutHints">
+                    <span><kbd>點選</kbd> 選中框體</span>
+                    <span><kbd>拖曳</kbd> 個別移動位置</span>
+                    <span><kbd>手柄</kbd> 個別縮放尺寸</span>
+                    <span><kbd>方向鍵</kbd> 1px 微調</span>
+                    <span><kbd>Shift</kbd>+<kbd>方向鍵</kbd> 10px 微調</span>
+                    <span><kbd>Delete</kbd> 刪除選中框</span>
                 </div>
             </div>
 
@@ -159,7 +387,7 @@
         </main>
     </div>
 
-    <!-- Application Script -->
-    <script src="app.js"></script>
+    <!-- Application Script (ES Module) -->
+    <script type="module" src="app.js?v=2.2.0"></script>
 </body>
 </html>
