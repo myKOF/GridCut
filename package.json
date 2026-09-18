@@ -1,6 +1,7 @@
 {
   "name": "grid-cut",
   "version": "1.0.0",
+  "type": "module",
   "description": "智能快速切圖工具",
   "scripts": {
     "dev": "npx http-server -p 5600 -a 127.0.0.1"

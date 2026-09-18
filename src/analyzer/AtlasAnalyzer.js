@@ -5,12 +5,13 @@ import { MorphologicalProcessor } from './MorphologicalProcessor.js';
 import { ConnectedComponentDetector } from './ConnectedComponentDetector.js';
 import { ComponentGrouper } from './ComponentGrouper.js';
 import { GutterDetector } from './GutterDetector.js';
+import { WatershedSegmenter } from './WatershedSegmenter.js';
 import { BoundingBoxRefiner } from './BoundingBoxRefiner.js';
 
 /**
  * AtlasAnalyzer
  * 智慧圖集分析主協調器 (Pipeline Facade)
- * 完全遵循 CV 辨識流程與解耦架構 (Phase 2 整合形態學與元件聚合)
+ * 完全遵循 CV 辨識流程與解耦架構 (Phase 3 整合 Distance Transform 與 Watershed 分水嶺)
  */
 export class AtlasAnalyzer {
     /**
@@ -23,9 +24,12 @@ export class AtlasAnalyzer {
      * @param {number} [options.minSize=16]
      * @param {number} [options.mergeGap=0]
      * @param {number} [options.padding=0]
-     * @param {number} [options.morphCloseRadius=2] 形態學閉合半徑
-     * @param {number} [options.groupDistance=6] 元件聚合間距
-     * @param {Object|string} [metadata] 可選的外部 metadata (TexturePacker, Phaser, JSON 等)
+     * @param {number} [options.morphCloseRadius=0] 形態學閉合半徑
+     * @param {number} [options.groupDistance=0] 元件聚合間距
+     * @param {boolean} [options.enableWatershed=true] 是否啟用分水嶺沾黏分離
+     * @param {number} [options.watershedDistance=14] 分水嶺核心峰值最小距離
+     * @param {number} [options.watershedThreshold=4.0] 分水嶺核心最小距離門檻
+     * @param {Object|string} [metadata] 可選的外部 metadata
      * @returns {Promise<{sprites: Array, stats: Object}>}
      */
     static async analyze(source, options = {}, metadata = null) {
@@ -52,7 +56,7 @@ export class AtlasAnalyzer {
 
         let canvas;
         let ctx;
-        if (source instanceof HTMLCanvasElement) {
+        if ((typeof HTMLCanvasElement !== 'undefined' && source instanceof HTMLCanvasElement) || (source && typeof source.getContext === 'function')) {
             canvas = source;
             ctx = canvas.getContext('2d', { willReadFrequently: true });
         } else {
@@ -72,8 +76,11 @@ export class AtlasAnalyzer {
             minSize = 16,
             mergeGap = 0,
             padding = 0,
-            morphCloseRadius = 2,
-            groupDistance = 6
+            morphCloseRadius = 0,
+            groupDistance = 0,
+            enableWatershed = true,
+            watershedDistance = 14,
+            watershedThreshold = 4.0
         } = options;
 
         // 2. 前景遮罩分割 (Foreground Segmentation)
@@ -95,7 +102,6 @@ export class AtlasAnalyzer {
         }
 
         // 3. 形態學閉合處理 (Morphological Closing)
-        // 封閉發光、粒子空洞與斷線碎片，使同一物件內部凝聚
         let mask = rawMask;
         if (morphCloseRadius > 0) {
             mask = MorphologicalProcessor.close(rawMask, width, height, morphCloseRadius);
@@ -107,13 +113,11 @@ export class AtlasAnalyzer {
         });
 
         // 5. 元件聚合 (Component Grouping - Union-Find)
-        // 依幾何間距、重疊與包含關係，將衛星碎片與特效聚合同一 Sprite
         const groupedBoxes = (groupDistance > 0)
             ? ComponentGrouper.group(rawComponents, { groupDistance, minSize, imgWidth: width, imgHeight: height })
             : rawComponents;
 
         // 6. Gutter 投影分析切分複合粘連區塊
-        // 安全防護：若連通成分標記因像素緊密接觸僅辨識出 <= 2 個超大區塊，啟用整圖全局投影自適應切分
         let candidateBoxes = groupedBoxes;
         if (groupedBoxes.length <= 2 && (width >= minSize * 2 || height >= minSize * 2)) {
             candidateBoxes = [{ x: 0, y: 0, width, height }];
@@ -131,8 +135,37 @@ export class AtlasAnalyzer {
             splitBoxes.push(...splits);
         }
 
+        // 6.5. Watershed 分水嶺沾黏分離 (處理非正交、斜向或不規則相碰圖形)
+        let finalBoxes = splitBoxes;
+        let watershedSplitCount = 0;
+
+        if (enableWatershed) {
+            finalBoxes = [];
+            for (const b of splitBoxes) {
+                if (b.width >= minSize * 1.5 || b.height >= minSize * 1.5) {
+                    const wsSplits = WatershedSegmenter.separateTouchingSprites(
+                        b,
+                        rawMask,
+                        width,
+                        height,
+                        {
+                            minPeakDistance: watershedDistance,
+                            minPeakThreshold: watershedThreshold,
+                            minSubSize: minSize
+                        }
+                    );
+                    if (wsSplits.length > 1) {
+                        watershedSplitCount += (wsSplits.length - 1);
+                    }
+                    finalBoxes.push(...wsSplits);
+                } else {
+                    finalBoxes.push(b);
+                }
+            }
+        }
+
         // 7. 緊湊外接框微調、多維度信心評估、Padding 與防溢限制
-        const refinedSprites = BoundingBoxRefiner.refine(splitBoxes, rawMask, width, height, {
+        const refinedSprites = BoundingBoxRefiner.refine(finalBoxes, rawMask, width, height, {
             minSize,
             mergeGap,
             padding
@@ -148,6 +181,8 @@ export class AtlasAnalyzer {
                 hasAlpha,
                 rawComponentCount: rawComponents.length,
                 groupedCount: groupedBoxes.length,
+                gutterSplitCount: splitBoxes.length,
+                watershedSplitCount,
                 count: refinedSprites.length,
                 durationMs
             }

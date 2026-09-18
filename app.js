@@ -2,6 +2,8 @@
 
 import { AtlasAnalyzer } from './src/analyzer/AtlasAnalyzer.js?v=2.3.0';
 import { MetadataDetector } from './src/analyzer/MetadataDetector.js?v=2.3.0';
+import { AlphaSegmenter } from './src/analyzer/AlphaSegmenter.js?v=2.3.0';
+import { BackgroundSegmenter } from './src/analyzer/BackgroundSegmenter.js?v=2.3.0';
 import { AtlasSlicerEditor } from './src/editor/AtlasSlicerEditor.js?v=2.3.0';
 import { AtlasExporter } from './src/editor/AtlasExporter.js?v=2.3.0';
 
@@ -37,12 +39,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const morphCloseRadiusInput = document.getElementById('morphCloseRadius');
     const morphCloseRadiusVal = document.getElementById('morphCloseRadiusVal');
     const groupDistanceInput = document.getElementById('groupDistance');
+    const enableWatershedInput = document.getElementById('enableWatershed');
+    const watershedDistanceInput = document.getElementById('watershedDistance');
 
     // Toolbar Buttons
     const runAutoDetectBtn = document.getElementById('runAutoDetectBtn');
     const autoDetectHeaderBtn = document.getElementById('autoDetectHeaderBtn');
     const toggleDrawBoxBtn = document.getElementById('toggleDrawBoxBtn');
     const drawBoxHeaderBtn = document.getElementById('drawBoxHeaderBtn');
+    const watershedHeaderBtn = document.getElementById('watershedHeaderBtn');
     const clearBoxesBtn = document.getElementById('clearBoxesBtn');
     const undoBtn = document.getElementById('undoBtn');
     const redoBtn = document.getElementById('redoBtn');
@@ -63,6 +68,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const exportSelectedBtn = document.getElementById('exportSelectedBtn');
     const splitSelectedHBtn = document.getElementById('splitSelectedHBtn');
     const splitSelectedVBtn = document.getElementById('splitSelectedVBtn');
+    const splitSelectedWatershedBtn = document.getElementById('splitSelectedWatershedBtn');
     const confDetailRow = document.getElementById('confDetailRow');
     const confBorderText = document.getElementById('confBorderText');
     const confGutterText = document.getElementById('confGutterText');
@@ -372,6 +378,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const boxPadding = boxPaddingInput ? Math.max(0, isNaN(parseInt(boxPaddingInput.value)) ? 0 : parseInt(boxPaddingInput.value)) : 0;
         const morphCloseRadius = morphCloseRadiusInput ? Math.max(0, isNaN(parseInt(morphCloseRadiusInput.value)) ? 0 : parseInt(morphCloseRadiusInput.value)) : 0;
         const groupDistance = groupDistanceInput ? Math.max(0, isNaN(parseInt(groupDistanceInput.value)) ? 0 : parseInt(groupDistanceInput.value)) : 0;
+        const enableWatershed = enableWatershedInput ? enableWatershedInput.checked : true;
+        const watershedDistance = watershedDistanceInput ? Math.max(4, isNaN(parseInt(watershedDistanceInput.value)) ? 14 : parseInt(watershedDistanceInput.value)) : 14;
 
         // Async execution to avoid freezing browser render
         setTimeout(async () => {
@@ -384,12 +392,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     mergeGap,
                     padding: boxPadding,
                     morphCloseRadius,
-                    groupDistance
+                    groupDistance,
+                    enableWatershed,
+                    watershedDistance
                 }, cachedMetadata);
 
                 slicerEditor.loadSprites(result.sprites);
                 const count = result.sprites.length;
-                statusText.textContent = `成功識別 ${count} 個 Sprite (耗時 ${result.stats.durationMs}ms, 聚合前: ${result.stats.rawComponentCount} 個)`;
+                const wsInfo = result.stats.watershedSplitCount ? `, 分水嶺切出 +${result.stats.watershedSplitCount} 個` : '';
+                statusText.textContent = `成功識別 ${count} 個 Sprite (耗時 ${result.stats.durationMs}ms, 聚合前: ${result.stats.rawComponentCount} 個${wsInfo})`;
                 if (findUncertainBtn) {
                     const uncertain = result.sprites.filter(s => (s.confidence || 1.0) < 0.8);
                     findUncertainBtn.disabled = uncertain.length === 0;
@@ -447,6 +458,56 @@ document.addEventListener('DOMContentLoaded', () => {
         splitSelectedVBtn.addEventListener('click', () => slicerEditor.splitSelected('vertical'));
     }
 
+    // Watershed Splitting Event
+    const triggerWatershedSplit = () => {
+        if (!originalImg || !slicerEditor) return;
+        const selected = slicerEditor.getSelectedSprites();
+        if (selected.length === 0) return;
+
+        const width = originalImg.naturalWidth || originalImg.width;
+        const height = originalImg.naturalHeight || originalImg.height;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(originalImg, 0, 0, width, height);
+        const imgData = ctx.getImageData(0, 0, width, height);
+
+        const bgType = bgDetectTypeSelect ? bgDetectTypeSelect.value : 'auto';
+        const alphaThreshold = alphaThresholdInput ? (isNaN(parseInt(alphaThresholdInput.value)) ? 15 : parseInt(alphaThresholdInput.value)) : 15;
+        const bgTolerance = bgToleranceInput ? (isNaN(parseInt(bgToleranceInput.value)) ? 28 : parseInt(bgToleranceInput.value)) : 28;
+        const hasAlpha = AlphaSegmenter.hasAlphaChannel(imgData.data, width, height);
+
+        let mask;
+        if (bgType === 'alpha' || (bgType === 'auto' && hasAlpha)) {
+            mask = AlphaSegmenter.segment(imgData, alphaThreshold).mask;
+        } else {
+            mask = BackgroundSegmenter.segment(imgData, { bgType, bgTolerance }).mask;
+        }
+
+        const watershedDistance = watershedDistanceInput ? Math.max(4, isNaN(parseInt(watershedDistanceInput.value)) ? 14 : parseInt(watershedDistanceInput.value)) : 14;
+        const minSize = minSizeInput ? Math.max(4, isNaN(parseInt(minSizeInput.value)) ? 16 : parseInt(minSizeInput.value)) : 16;
+
+        const count = slicerEditor.watershedSplitSelected(mask, width, height, {
+            minPeakDistance: watershedDistance,
+            minPeakThreshold: 4.0,
+            minSubSize: minSize
+        });
+
+        if (count > 0) {
+            statusText.textContent = `成功使用分水嶺演算法將選中框體分離為 ${count} 個獨立 Sprite！`;
+        } else {
+            statusText.textContent = `分水嶺分析：該框體內部僅有單一核心或尺寸過小，未進行切分。`;
+        }
+    };
+
+    if (watershedHeaderBtn) {
+        watershedHeaderBtn.addEventListener('click', triggerWatershedSplit);
+    }
+    if (splitSelectedWatershedBtn) {
+        splitSelectedWatershedBtn.addEventListener('click', triggerWatershedSplit);
+    }
+
     // Clear all boxes
     clearBoxesBtn.addEventListener('click', () => {
         const sprites = slicerEditor.getSprites();
@@ -489,6 +550,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (mergeBoxesBtn) mergeBoxesBtn.disabled = true;
             if (splitHBtn) splitHBtn.disabled = true;
             if (splitVBtn) splitVBtn.disabled = true;
+            if (watershedHeaderBtn) watershedHeaderBtn.disabled = true;
             return;
         }
 
@@ -524,6 +586,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (mergeBoxesBtn) mergeBoxesBtn.disabled = true;
             if (splitHBtn) splitHBtn.disabled = false;
             if (splitVBtn) splitVBtn.disabled = false;
+            if (watershedHeaderBtn) watershedHeaderBtn.disabled = false;
         } else {
             selectedBoxTitle.textContent = `多選 (${selectedSprites.length} 個)`;
             if (selectedBoxConfidence) {
@@ -541,6 +604,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (mergeBoxesBtn) mergeBoxesBtn.disabled = false;
             if (splitHBtn) splitHBtn.disabled = false;
             if (splitVBtn) splitVBtn.disabled = false;
+            if (watershedHeaderBtn) watershedHeaderBtn.disabled = false;
         }
     }
 

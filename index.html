@@ -120,6 +120,19 @@
                     </div>
                 </div>
 
+                <div class="input-group-row">
+                    <div class="input-field">
+                        <label for="enableWatershed" style="display: flex; align-items: center; cursor: pointer;" title="針對不規則/斜向沾黏 Sprite 啟用分水嶺演算法">
+                            <input type="checkbox" id="enableWatershed" checked style="width: auto; margin-right: 6px; cursor: pointer;">
+                            高階沾黏分離 (Watershed)
+                        </label>
+                    </div>
+                    <div class="input-field">
+                        <label for="watershedDistance" title="分水嶺核心峰值最小距離 (px)，數值愈小對相連小圖愈敏感">分水嶺敏感度 (px)</label>
+                        <input type="number" id="watershedDistance" value="14" min="6" max="64">
+                    </div>
+                </div>
+
                 <div class="btn-group-row">
                     <button id="runAutoDetectBtn" class="btn btn-accent btn-sm" disabled>
                         <i class="fa-solid fa-wand-magic-sparkles"></i> 重新自動識別
@@ -170,6 +183,9 @@
                         </button>
                         <button id="splitSelectedVBtn" class="btn btn-secondary btn-sm" title="垂直切成左右兩半">
                             <i class="fa-solid fa-arrows-split-up-and-left"></i> 垂直切
+                        </button>
+                        <button id="splitSelectedWatershedBtn" class="btn btn-secondary btn-sm" title="使用分水嶺演算法分離選中框體中的相連圖標">
+                            <i class="fa-solid fa-water"></i> 分水嶺
                         </button>
                     </div>
                 </div>
@@ -312,6 +328,9 @@
                         <button id="splitVBtn" class="btn btn-secondary btn-sm" disabled title="將選中框體垂直左右分割">
                             <i class="fa-solid fa-arrows-split-up-and-left"></i> 垂直分割
                         </button>
+                        <button id="watershedHeaderBtn" class="btn btn-secondary btn-sm" disabled title="對選中框體執行分水嶺沾黏分離 (Watershed Split)">
+                            <i class="fa-solid fa-water"></i> 分水嶺切分
+                        </button>
                         <button id="findUncertainBtn" class="btn btn-secondary btn-sm" disabled title="快速跳轉至下一張待確認的低/中信心度框體">
                             <i class="fa-solid fa-triangle-exclamation" style="color: #f59e0b;"></i> 檢查待確認框
                         </button>
@@ -398,6 +417,6 @@
     </div>
 
     <!-- Application Script (ES Module) -->
-    <script type="module" src="app.js?v=2.3.0"></script>
+    <script type="module" src="app.js?v=3.0.0"></script>
 </body>
 </html>

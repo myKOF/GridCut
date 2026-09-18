@@ -1,3 +1,5 @@
+import { WatershedSegmenter } from '../analyzer/WatershedSegmenter.js';
+
 /**
  * AtlasSlicerEditor
  * 專職負責 UI 預覽、互動修改、選取、拉框、移動、縮放、合併、分割與 Undo/Redo
@@ -285,6 +287,53 @@ export class AtlasSlicerEditor {
             this.render();
             this._notifyChanges();
         }
+    }
+
+    /**
+     * 對目前選中的框體執行分水嶺智能分離 (Watershed Split)
+     * @param {Uint8Array} mask 前景遮罩
+     * @param {number} imgWidth 
+     * @param {number} imgHeight 
+     * @param {Object} [options]
+     * @returns {number} 切分出的新 Sprite 數量
+     */
+    watershedSplitSelected(mask, imgWidth, imgHeight, options = {}) {
+        const selected = this.getSelectedSprites();
+        if (selected.length === 0 || !mask) return 0;
+
+        let totalNewSprites = 0;
+        const newSpritesList = [];
+        const toRemoveIds = new Set();
+
+        for (const s of selected) {
+            const splits = WatershedSegmenter.separateTouchingSprites(s, mask, imgWidth, imgHeight, options);
+            if (splits && splits.length > 1) {
+                toRemoveIds.add(s.id);
+                splits.forEach((sp, idx) => {
+                    newSpritesList.push({
+                        id: `${s.id}_ws${idx + 1}`,
+                        x: sp.x,
+                        y: sp.y,
+                        width: sp.width,
+                        height: sp.height,
+                        confidence: 0.92
+                    });
+                });
+                totalNewSprites += splits.length;
+            }
+        }
+
+        if (totalNewSprites > 0) {
+            this.sprites = this.sprites.filter(s => !toRemoveIds.has(s.id)).concat(newSpritesList);
+            this.selectedIds.clear();
+            newSpritesList.forEach(ns => this.selectedIds.add(ns.id));
+
+            this._pushHistory('分水嶺沾黏分離');
+            this.render();
+            this._notifyChanges();
+        }
+
+        return totalNewSprites;
     }
 
     /**
