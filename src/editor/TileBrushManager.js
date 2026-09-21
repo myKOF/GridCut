@@ -1,8 +1,8 @@
 /**
  * TileBrushManager.js
  * 
- * 管理圖塊「確定產出 (淺綠色)」與「取消排除 (淺紅色)」筆刷狀態
- * 支援 1x1 至 5x5 筆刷規格、連續拖曳塗抹、統計計算與排除篩選
+ * 管理圖塊「確定產出 (綠色)」與「取消排除 (淺紅色)」筆刷狀態
+ * 支援 1x1 至 5x5 筆刷規格、連續拖曳塗抹、歷史紀錄 (Ctrl+Z / Ctrl+Y)、統計計算與排除篩選
  */
 export class TileBrushManager {
     constructor() {
@@ -15,6 +15,16 @@ export class TileBrushManager {
 
         // 智能多框模式各 Sprite 狀態 key: sprite.id => 'included' | 'excluded'
         this.spriteStates = new Map();
+
+        // 復原與重做歷史堆疊 (History Stack)
+        this.history = [{
+            grid: new Map(),
+            sprite: new Map()
+        }];
+        this.historyIndex = 0;
+        this.maxHistory = 60;
+        this.isStrokeActive = false;
+        this.strokeHasChanges = false;
 
         // 監聽回調
         this.onChangeCallbacks = [];
@@ -34,6 +44,78 @@ export class TileBrushManager {
             try { fn(); } catch (e) { console.error(e); }
         }
     }
+
+    // ==========================================
+    // 歷史紀錄 (Undo / Redo) 管理
+    // ==========================================
+
+    beginStroke() {
+        this.isStrokeActive = true;
+        this.strokeHasChanges = false;
+    }
+
+    endStroke() {
+        if (!this.isStrokeActive) return;
+        this.isStrokeActive = false;
+        if (this.strokeHasChanges) {
+            this._commitHistory('筆刷塗抹');
+            this.strokeHasChanges = false;
+        }
+    }
+
+    _commitHistory(actionName = '') {
+        // 丟棄目前指標之後的所有 Redo 分支
+        if (this.historyIndex < this.history.length - 1) {
+            this.history.splice(this.historyIndex + 1);
+        }
+
+        // 推入目前狀態的深拷貝快照
+        this.history.push({
+            grid: new Map(this.gridCellStates),
+            sprite: new Map(this.spriteStates),
+            action: actionName
+        });
+
+        if (this.history.length > this.maxHistory) {
+            this.history.shift();
+        } else {
+            this.historyIndex++;
+        }
+
+        this._notify();
+    }
+
+    canUndo() {
+        return this.historyIndex > 0;
+    }
+
+    canRedo() {
+        return this.historyIndex < this.history.length - 1;
+    }
+
+    undo() {
+        if (!this.canUndo()) return false;
+        this.historyIndex--;
+        const snapshot = this.history[this.historyIndex];
+        this.gridCellStates = new Map(snapshot.grid);
+        this.spriteStates = new Map(snapshot.sprite);
+        this._notify();
+        return true;
+    }
+
+    redo() {
+        if (!this.canRedo()) return false;
+        this.historyIndex++;
+        const snapshot = this.history[this.historyIndex];
+        this.gridCellStates = new Map(snapshot.grid);
+        this.spriteStates = new Map(snapshot.sprite);
+        this._notify();
+        return true;
+    }
+
+    // ==========================================
+    // 工具與筆刷大小
+    // ==========================================
 
     setTool(tool) {
         if (['pointer', 'include', 'exclude', 'eraser'].includes(tool)) {
@@ -58,6 +140,10 @@ export class TileBrushManager {
         return this.brushSize;
     }
 
+    // ==========================================
+    // 網格單元格狀態管理
+    // ==========================================
+
     /**
      * 取得特定網格單元格狀態
      * @returns {'default' | 'included' | 'excluded'}
@@ -81,20 +167,27 @@ export class TileBrushManager {
     paintCell(col, row, tool = this.tool) {
         if (col < 0 || row < 0) return false;
         const key = `${col}_${row}`;
+        const prevState = this.gridCellStates.get(key) || 'default';
+        let targetState = 'default';
 
-        if (tool === 'include') {
-            this.gridCellStates.set(key, 'included');
-            return true;
-        } else if (tool === 'exclude') {
-            this.gridCellStates.set(key, 'excluded');
-            return true;
-        } else if (tool === 'eraser') {
-            if (this.gridCellStates.has(key)) {
-                this.gridCellStates.delete(key);
-                return true;
-            }
+        if (tool === 'include') targetState = 'included';
+        else if (tool === 'exclude') targetState = 'excluded';
+        else if (tool === 'eraser') targetState = 'default';
+
+        if (prevState === targetState) return false;
+
+        if (targetState === 'default') {
+            this.gridCellStates.delete(key);
+        } else {
+            this.gridCellStates.set(key, targetState);
         }
-        return false;
+
+        this.strokeHasChanges = true;
+        // 若非處於批次 stroke 中，則單獨 commit
+        if (!this.isStrokeActive) {
+            this._commitHistory('筆刷點擊');
+        }
+        return true;
     }
 
     /**
@@ -144,9 +237,10 @@ export class TileBrushManager {
      * 清空所有標記
      */
     clearAll() {
+        if (this.gridCellStates.size === 0 && this.spriteStates.size === 0) return;
         this.gridCellStates.clear();
         this.spriteStates.clear();
-        this._notify();
+        this._commitHistory('重設所有標記');
     }
 
     /**
@@ -188,22 +282,23 @@ export class TileBrushManager {
 
     paintSprite(spriteId, tool = this.tool) {
         if (!spriteId) return false;
-        if (tool === 'include') {
-            this.spriteStates.set(spriteId, 'included');
-            this._notify();
-            return true;
-        } else if (tool === 'exclude') {
-            this.spriteStates.set(spriteId, 'excluded');
-            this._notify();
-            return true;
-        } else if (tool === 'eraser') {
-            if (this.spriteStates.has(spriteId)) {
-                this.spriteStates.delete(spriteId);
-                this._notify();
-                return true;
-            }
+        const prevState = this.spriteStates.get(spriteId) || 'default';
+        let targetState = 'default';
+
+        if (tool === 'include') targetState = 'included';
+        else if (tool === 'exclude') targetState = 'excluded';
+        else if (tool === 'eraser') targetState = 'default';
+
+        if (prevState === targetState) return false;
+
+        if (targetState === 'default') {
+            this.spriteStates.delete(spriteId);
+        } else {
+            this.spriteStates.set(spriteId, targetState);
         }
-        return false;
+
+        this._commitHistory('Sprite 標記');
+        return true;
     }
 
     getEffectiveSpritesCount(sprites) {

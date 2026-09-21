@@ -126,7 +126,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const cropBox = document.getElementById('cropBox');
     const shadingOverlay = document.getElementById('shadingOverlay');
     const gridCanvas = document.getElementById('gridCanvas');
-    const gridCtx = gridCanvas.getContext('2d');
+    const gridCtx = gridCanvas ? gridCanvas.getContext('2d') : null;
+    const gridSvg = document.getElementById('gridSvg');
+    const viewportGridCanvas = document.getElementById('viewportGridCanvas');
+    const viewportGridCtx = viewportGridCanvas ? viewportGridCanvas.getContext('2d') : null;
 
     // Brush Toolbar Elements
     const brushToolbar = document.getElementById('brushToolbar');
@@ -136,6 +139,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const brushEraserBtn = document.getElementById('brushEraserBtn');
     const brushSizeBtns = document.querySelectorAll('.brush-size-btn');
     const clearMarksBtn = document.getElementById('clearMarksBtn');
+    const brushUndoBtn = document.getElementById('brushUndoBtn');
+    const brushRedoBtn = document.getElementById('brushRedoBtn');
     const brushStatsBadge = document.getElementById('brushStatsBadge');
     const excludedCountNum = document.getElementById('excludedCountNum');
 
@@ -536,8 +541,32 @@ document.addEventListener('DOMContentLoaded', () => {
     drawBoxHeaderBtn.addEventListener('click', () => toggleDrawMode());
 
     // Undo / Redo
-    if (undoBtn) undoBtn.addEventListener('click', () => slicerEditor.undo());
-    if (redoBtn) redoBtn.addEventListener('click', () => slicerEditor.redo());
+    if (undoBtn) {
+        undoBtn.addEventListener('click', () => {
+            if (currentMode === 'grid' || tileBrushManager.getTool() !== 'pointer') {
+                if (tileBrushManager.undo()) {
+                    updateBrushToolbarUI();
+                    recalculateAndDrawGrid();
+                    statusText.textContent = '已復原上一步筆刷操作 (Ctrl+Z)';
+                }
+            } else if (currentMode === 'auto' && slicerEditor) {
+                slicerEditor.undo();
+            }
+        });
+    }
+    if (redoBtn) {
+        redoBtn.addEventListener('click', () => {
+            if (currentMode === 'grid' || tileBrushManager.getTool() !== 'pointer') {
+                if (tileBrushManager.redo()) {
+                    updateBrushToolbarUI();
+                    recalculateAndDrawGrid();
+                    statusText.textContent = '已重做下一步筆刷操作 (Ctrl+Y)';
+                }
+            } else if (currentMode === 'auto' && slicerEditor) {
+                slicerEditor.redo();
+            }
+        });
+    }
 
     // Merge & Split
     if (mergeBoxesBtn) {
@@ -650,6 +679,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 toggleGridOverlayBtn.title = '開啟/隱藏網格分割線 (快捷鍵 H)';
             }
             statusText.textContent = '已恢復顯示所有圈選框與分割線';
+        }
+        if (currentMode === 'grid') {
+            drawViewportGrid();
         }
     }
 
@@ -771,31 +803,60 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('keydown', (e) => {
         if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
 
-        if (currentMode === 'auto' && slicerEditor) {
-            const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+        const isCtrlOrCmd = e.ctrlKey || e.metaKey;
 
-            if (isCtrlOrCmd && (e.key === 'z' || e.key === 'Z')) {
-                e.preventDefault();
-                if (e.shiftKey) {
+        // Ctrl+Z / Cmd+Z: Undo
+        if (isCtrlOrCmd && (e.key === 'z' || e.key === 'Z')) {
+            e.preventDefault();
+            if (e.shiftKey) {
+                // Redo via Ctrl+Shift+Z
+                if (currentMode === 'grid' || tileBrushManager.getTool() !== 'pointer') {
+                    if (tileBrushManager.redo()) {
+                        updateBrushToolbarUI();
+                        recalculateAndDrawGrid();
+                        statusText.textContent = '已重做下一步筆刷操作 (Ctrl+Y)';
+                    }
+                } else if (currentMode === 'auto' && slicerEditor) {
                     slicerEditor.redo();
-                } else {
+                }
+            } else {
+                // Undo via Ctrl+Z
+                if (currentMode === 'grid' || tileBrushManager.getTool() !== 'pointer') {
+                    if (tileBrushManager.undo()) {
+                        updateBrushToolbarUI();
+                        recalculateAndDrawGrid();
+                        statusText.textContent = '已復原上一步筆刷操作 (Ctrl+Z)';
+                    }
+                } else if (currentMode === 'auto' && slicerEditor) {
                     slicerEditor.undo();
                 }
-                return;
             }
+            return;
+        }
 
-            // H: Toggle Overlay Visibility
-            if (e.key === 'h' || e.key === 'H') {
-                e.preventDefault();
-                toggleOverlayVisibility();
-                return;
-            }
-
-            if (isCtrlOrCmd && (e.key === 'y' || e.key === 'Y')) {
-                e.preventDefault();
+        // Ctrl+Y / Cmd+Y: Redo
+        if (isCtrlOrCmd && (e.key === 'y' || e.key === 'Y')) {
+            e.preventDefault();
+            if (currentMode === 'grid' || tileBrushManager.getTool() !== 'pointer') {
+                if (tileBrushManager.redo()) {
+                    updateBrushToolbarUI();
+                    recalculateAndDrawGrid();
+                    statusText.textContent = '已重做下一步筆刷操作 (Ctrl+Y)';
+                }
+            } else if (currentMode === 'auto' && slicerEditor) {
                 slicerEditor.redo();
-                return;
             }
+            return;
+        }
+
+        // H: Toggle Overlay Visibility (All modes)
+        if (e.key === 'h' || e.key === 'H') {
+            e.preventDefault();
+            toggleOverlayVisibility();
+            return;
+        }
+
+        if (currentMode === 'auto' && slicerEditor) {
 
             if (e.key === 'Delete' || e.key === 'Backspace') {
                 e.preventDefault();
@@ -1174,6 +1235,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.preventDefault();
                 e.stopPropagation();
                 isBrushPainting = true;
+                tileBrushManager.beginStroke(); // Start history stroke
+
                 const rect = cropBox.getBoundingClientRect();
                 const clientX = e.touches ? e.touches[0].clientX : e.clientX;
                 const clientY = e.touches ? e.touches[0].clientY : e.clientY;
@@ -1187,7 +1250,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     recalculateAndDrawGrid();
                 }
                 const onEndPaint = () => {
-                    isBrushPainting = false;
+                    if (isBrushPainting) {
+                        isBrushPainting = false;
+                        tileBrushManager.endStroke(); // Commit history stroke
+                        updateBrushToolbarUI();
+                        recalculateAndDrawGrid();
+                    }
                     window.removeEventListener('mouseup', onEndPaint);
                     window.removeEventListener('touchend', onEndPaint);
                 };
@@ -1325,19 +1393,16 @@ document.addEventListener('DOMContentLoaded', () => {
         cropBox.style.top = `${cropBoxState.y}px`;
         cropBox.style.width = `${cropBoxState.w}px`;
         cropBox.style.height = `${cropBoxState.h}px`;
-
-        const dpr = window.devicePixelRatio || 1;
-        const effectiveZoom = currentZoom || 1.0;
-        const scaleFactor = effectiveZoom * dpr;
-
-        gridCanvas.width = Math.max(1, Math.round(cropBoxState.w * scaleFactor));
-        gridCanvas.height = Math.max(1, Math.round(cropBoxState.h * scaleFactor));
-        gridCanvas.style.width = '100%';
-        gridCanvas.style.height = '100%';
+        drawViewportGrid();
     }
 
     function recalculateAndDrawGrid() {
-        if (!originalImg || currentMode !== 'grid') return;
+        if (!originalImg || currentMode !== 'grid') {
+            if (viewportGridCtx && viewportGridCanvas) {
+                viewportGridCtx.clearRect(0, 0, viewportGridCanvas.width, viewportGridCanvas.height);
+            }
+            return;
+        }
 
         // If lines not yet initialized and not customized, sync uniform
         if (!gridLinesState.isCustomized && gridLinesState.colLines.length === 0 && gridLinesState.rowLines.length === 0) {
@@ -1370,157 +1435,185 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         updateDownloadButtonState();
+        drawViewportGrid();
+    }
+
+    // Viewport-space Grid Renderer (100% immune to CSS scale, ALWAYS crisp 1px on screen)
+    function drawViewportGrid() {
+        if (!viewportGridCanvas || !viewportGridCtx) return;
+        if (!originalImg || currentMode !== 'grid' || isOverlayHidden) {
+            viewportGridCtx.clearRect(0, 0, viewportGridCanvas.width, viewportGridCanvas.height);
+            return;
+        }
+
+        const cw = canvasContainer.clientWidth;
+        const ch = canvasContainer.clientHeight;
+        if (cw <= 0 || ch <= 0) return;
 
         const dpr = window.devicePixelRatio || 1;
-        const effectiveZoom = currentZoom || 1.0;
-        const scaleFactor = effectiveZoom * dpr;
+        const targetW = Math.round(cw * dpr);
+        const targetH = Math.round(ch * dpr);
 
-        // Maintain canvas buffer resolution for physical display
-        gridCanvas.width = Math.max(1, Math.round(cropBoxState.w * scaleFactor));
-        gridCanvas.height = Math.max(1, Math.round(cropBoxState.h * scaleFactor));
-        gridCanvas.style.width = '100%';
-        gridCanvas.style.height = '100%';
+        if (viewportGridCanvas.width !== targetW || viewportGridCanvas.height !== targetH) {
+            viewportGridCanvas.width = targetW;
+            viewportGridCanvas.height = targetH;
+        }
 
-        gridCtx.resetTransform();
-        gridCtx.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
+        viewportGridCtx.resetTransform();
+        viewportGridCtx.clearRect(0, 0, targetW, targetH);
+        viewportGridCtx.scale(dpr, dpr);
+
+        const cols = gridLinesState.colLines.length + 1;
+        const rows = gridLinesState.rowLines.length + 1;
         if (cols <= 0 || rows <= 0) return;
 
-        gridCtx.scale(scaleFactor, scaleFactor);
+        // Screen-space coordinates of cropBox relative to canvasContainer
+        const boxScreenX = panX + cropBoxState.x * currentZoom;
+        const boxScreenY = panY + cropBoxState.y * currentZoom;
+        const boxScreenW = cropBoxState.w * currentZoom;
+        const boxScreenH = cropBoxState.h * currentZoom;
+
+        // Quick culling: if cropBox is completely outside canvasContainer
+        if (boxScreenX + boxScreenW < 0 || boxScreenX > cw ||
+            boxScreenY + boxScreenH < 0 || boxScreenY > ch) {
+            return;
+        }
 
         const colBounds = [0, ...gridLinesState.colLines, cropBoxState.w];
         const rowBounds = [0, ...gridLinesState.rowLines, cropBoxState.h];
 
+        viewportGridCtx.save();
+        // Clip to visible cropBox screen bounds
+        viewportGridCtx.beginPath();
+        viewportGridCtx.rect(boxScreenX, boxScreenY, boxScreenW, boxScreenH);
+        viewportGridCtx.clip();
+
         // --- Layer 1: Cell Included / Excluded Colors ---
         for (let r = 0; r < rows; r++) {
-            const y0 = rowBounds[r];
-            const y1 = rowBounds[r + 1];
-            const ch = y1 - y0;
-            if (ch <= 0) continue;
+            const cellY0 = boxScreenY + rowBounds[r] * currentZoom;
+            const cellY1 = boxScreenY + rowBounds[r + 1] * currentZoom;
+            const cellH = cellY1 - cellY0;
+            if (cellH <= 0) continue;
+            if (cellY1 < 0 || cellY0 > ch) continue;
 
             for (let c = 0; c < cols; c++) {
-                const x0 = colBounds[c];
-                const x1 = colBounds[c + 1];
-                const cw = x1 - x0;
-                if (cw <= 0) continue;
+                const cellX0 = boxScreenX + colBounds[c] * currentZoom;
+                const cellX1 = boxScreenX + colBounds[c + 1] * currentZoom;
+                const cellW = cellX1 - cellX0;
+                if (cellW <= 0) continue;
+                if (cellX1 < 0 || cellX0 > cw) continue;
 
                 const state = tileBrushManager.getCellState(c, r);
                 if (state === 'included') {
-                    // 確定產出：淺綠色
-                    gridCtx.fillStyle = 'rgba(34, 197, 94, 0.32)';
-                    gridCtx.fillRect(x0, y0, cw, ch);
-                    gridCtx.strokeStyle = 'rgba(34, 197, 94, 0.8)';
-                    gridCtx.lineWidth = 1 / effectiveZoom;
-                    gridCtx.strokeRect(x0, y0, cw, ch);
+                    // 確定產出：加深飽和深綠色
+                    viewportGridCtx.fillStyle = 'rgba(22, 163, 74, 0.58)';
+                    viewportGridCtx.fillRect(cellX0, cellY0, cellW, cellH);
+                    viewportGridCtx.strokeStyle = 'rgba(21, 128, 61, 0.95)';
+                    viewportGridCtx.lineWidth = 1;
+                    viewportGridCtx.strokeRect(cellX0 + 0.5, cellY0 + 0.5, cellW - 1, cellH - 1);
                 } else if (state === 'excluded') {
                     // 取消排除：淺紅色
-                    gridCtx.fillStyle = 'rgba(239, 68, 68, 0.40)';
-                    gridCtx.fillRect(x0, y0, cw, ch);
-                    gridCtx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
-                    gridCtx.lineWidth = 1 / effectiveZoom;
-                    gridCtx.strokeRect(x0, y0, cw, ch);
+                    viewportGridCtx.fillStyle = 'rgba(239, 68, 68, 0.40)';
+                    viewportGridCtx.fillRect(cellX0, cellY0, cellW, cellH);
+                    viewportGridCtx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
+                    viewportGridCtx.lineWidth = 1;
+                    viewportGridCtx.strokeRect(cellX0 + 0.5, cellY0 + 0.5, cellW - 1, cellH - 1);
 
                     // 繪製紅叉叉
-                    const cx = x0 + cw / 2;
-                    const cy = y0 + ch / 2;
-                    const markR = Math.min(cw, ch) * 0.22;
+                    const cx = cellX0 + cellW / 2;
+                    const cy = cellY0 + cellH / 2;
+                    const markR = Math.min(cellW, cellH) * 0.22;
                     if (markR >= 3) {
-                        gridCtx.beginPath();
-                        gridCtx.moveTo(cx - markR, cy - markR);
-                        gridCtx.lineTo(cx + markR, cy + markR);
-                        gridCtx.moveTo(cx + markR, cy - markR);
-                        gridCtx.lineTo(cx - markR, cy + markR);
-                        gridCtx.strokeStyle = 'rgba(239, 68, 68, 0.85)';
-                        gridCtx.lineWidth = Math.max(1, 1.5 / effectiveZoom);
-                        gridCtx.stroke();
+                        viewportGridCtx.beginPath();
+                        viewportGridCtx.moveTo(cx - markR, cy - markR);
+                        viewportGridCtx.lineTo(cx + markR, cy + markR);
+                        viewportGridCtx.moveTo(cx + markR, cy - markR);
+                        viewportGridCtx.lineTo(cx - markR, cy + markR);
+                        viewportGridCtx.strokeStyle = 'rgba(239, 68, 68, 0.95)';
+                        viewportGridCtx.lineWidth = 1.5;
+                        viewportGridCtx.stroke();
                     }
                 }
             }
         }
 
-        // --- Layer 2: Crisp 1px Grid Lines (無論放大縮小，均需保持在 1px 寬度) ---
-        const stroke1px = 1 / effectiveZoom;
-        const dash4px = 4 / effectiveZoom;
+        // --- Layer 2: Crisp 1px Grid Lines (無論放大幾千倍，在螢幕上永遠維持 1px) ---
+        viewportGridCtx.lineWidth = 1;
 
         // Pass 1: Semi-transparent dark drop shadow
-        gridCtx.lineWidth = stroke1px;
-        gridCtx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
-        gridCtx.setLineDash([dash4px, dash4px]);
+        viewportGridCtx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+        viewportGridCtx.setLineDash([4, 4]);
 
+        viewportGridCtx.beginPath();
         for (let i = 0; i < gridLinesState.colLines.length; i++) {
-            const x = gridLinesState.colLines[i];
-            gridCtx.beginPath();
-            gridCtx.moveTo(x, 0);
-            gridCtx.lineTo(x, cropBoxState.h);
-            gridCtx.stroke();
+            const lx = Math.round(boxScreenX + gridLinesState.colLines[i] * currentZoom) + 0.5;
+            viewportGridCtx.moveTo(lx, boxScreenY);
+            viewportGridCtx.lineTo(lx, boxScreenY + boxScreenH);
         }
         for (let j = 0; j < gridLinesState.rowLines.length; j++) {
-            const y = gridLinesState.rowLines[j];
-            gridCtx.beginPath();
-            gridCtx.moveTo(0, y);
-            gridCtx.lineTo(cropBoxState.w, y);
-            gridCtx.stroke();
+            const ly = Math.round(boxScreenY + gridLinesState.rowLines[j] * currentZoom) + 0.5;
+            viewportGridCtx.moveTo(boxScreenX, ly);
+            viewportGridCtx.lineTo(boxScreenX + boxScreenW, ly);
         }
+        viewportGridCtx.stroke();
 
         // Pass 2: Crisp dashed white lines
-        gridCtx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
-        gridCtx.lineDashOffset = dash4px;
+        viewportGridCtx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+        viewportGridCtx.lineDashOffset = 4;
 
+        viewportGridCtx.beginPath();
         for (let i = 0; i < gridLinesState.colLines.length; i++) {
-            const x = gridLinesState.colLines[i];
-            gridCtx.beginPath();
-            gridCtx.moveTo(x, 0);
-            gridCtx.lineTo(x, cropBoxState.h);
-            gridCtx.stroke();
+            const lx = Math.round(boxScreenX + gridLinesState.colLines[i] * currentZoom) + 0.5;
+            viewportGridCtx.moveTo(lx, boxScreenY);
+            viewportGridCtx.lineTo(lx, boxScreenY + boxScreenH);
         }
         for (let j = 0; j < gridLinesState.rowLines.length; j++) {
-            const y = gridLinesState.rowLines[j];
-            gridCtx.beginPath();
-            gridCtx.moveTo(0, y);
-            gridCtx.lineTo(cropBoxState.w, y);
-            gridCtx.stroke();
+            const ly = Math.round(boxScreenY + gridLinesState.rowLines[j] * currentZoom) + 0.5;
+            viewportGridCtx.moveTo(boxScreenX, ly);
+            viewportGridCtx.lineTo(boxScreenX + boxScreenW, ly);
         }
+        viewportGridCtx.stroke();
+        viewportGridCtx.setLineDash([]);
 
-        gridCtx.setLineDash([]); // Reset dash
-
-        // --- Layer 3: Highlight Hovered or Dragged Line with size badges (only in pointer mode) ---
+        // --- Layer 3: Highlight Hovered or Dragged Line with size badges ---
         const highlight = gridLinesState.activeLine || gridLinesState.hoveredLine;
         if (highlight && tileBrushManager.getTool() === 'pointer') {
-            gridCtx.save();
-            gridCtx.lineWidth = 2 / effectiveZoom;
-            gridCtx.strokeStyle = '#38bdf8';
-            gridCtx.shadowColor = '#38bdf8';
-            gridCtx.shadowBlur = 6 / effectiveZoom;
+            viewportGridCtx.save();
+            viewportGridCtx.lineWidth = 2;
+            viewportGridCtx.strokeStyle = '#38bdf8';
+            viewportGridCtx.shadowColor = '#0284c7';
+            viewportGridCtx.shadowBlur = 6;
 
             if (highlight.type === 'col' && highlight.index < gridLinesState.colLines.length) {
-                const hx = gridLinesState.colLines[highlight.index];
-                gridCtx.beginPath();
-                gridCtx.moveTo(hx, 0);
-                gridCtx.lineTo(hx, cropBoxState.h);
-                gridCtx.stroke();
+                const hx = Math.round(boxScreenX + gridLinesState.colLines[highlight.index] * currentZoom) + 0.5;
+                viewportGridCtx.beginPath();
+                viewportGridCtx.moveTo(hx, boxScreenY);
+                viewportGridCtx.lineTo(hx, boxScreenY + boxScreenH);
+                viewportGridCtx.stroke();
 
                 const prevX = highlight.index > 0 ? gridLinesState.colLines[highlight.index - 1] : 0;
                 const nextX = highlight.index < gridLinesState.colLines.length - 1 ? gridLinesState.colLines[highlight.index + 1] : cropBoxState.w;
-                const leftW = Math.round((hx - prevX) * scaleRatio);
-                const rightW = Math.round((nextX - hx) * scaleRatio);
+                const leftW = Math.round((gridLinesState.colLines[highlight.index] - prevX) * scaleRatio);
+                const rightW = Math.round((nextX - gridLinesState.colLines[highlight.index]) * scaleRatio);
 
-                drawDimensionBadge(gridCtx, `${leftW}px`, Math.max(24, hx - 30), Math.min(cropBoxState.h - 18, 24), effectiveZoom);
-                drawDimensionBadge(gridCtx, `${rightW}px`, Math.min(cropBoxState.w - 24, hx + 30), Math.min(cropBoxState.h - 18, 24), effectiveZoom);
+                drawScreenDimensionBadge(viewportGridCtx, `${leftW}px`, Math.max(boxScreenX + 24, hx - 32), Math.min(boxScreenY + boxScreenH - 18, boxScreenY + 24));
+                drawScreenDimensionBadge(viewportGridCtx, `${rightW}px`, Math.min(boxScreenX + boxScreenW - 24, hx + 32), Math.min(boxScreenY + boxScreenH - 18, boxScreenY + 24));
             } else if (highlight.type === 'row' && highlight.index < gridLinesState.rowLines.length) {
-                const hy = gridLinesState.rowLines[highlight.index];
-                gridCtx.beginPath();
-                gridCtx.moveTo(0, hy);
-                gridCtx.lineTo(cropBoxState.w, hy);
-                gridCtx.stroke();
+                const hy = Math.round(boxScreenY + gridLinesState.rowLines[highlight.index] * currentZoom) + 0.5;
+                viewportGridCtx.beginPath();
+                viewportGridCtx.moveTo(boxScreenX, hy);
+                viewportGridCtx.lineTo(boxScreenX + boxScreenW, hy);
+                viewportGridCtx.stroke();
 
                 const prevY = highlight.index > 0 ? gridLinesState.rowLines[highlight.index - 1] : 0;
                 const nextY = highlight.index < gridLinesState.rowLines.length - 1 ? gridLinesState.rowLines[highlight.index + 1] : cropBoxState.h;
-                const topH = Math.round((hy - prevY) * scaleRatio);
-                const btmH = Math.round((nextY - hy) * scaleRatio);
+                const topH = Math.round((gridLinesState.rowLines[highlight.index] - prevY) * scaleRatio);
+                const btmH = Math.round((nextY - gridLinesState.rowLines[highlight.index]) * scaleRatio);
 
-                drawDimensionBadge(gridCtx, `${topH}px`, Math.min(cropBoxState.w - 32, 40), Math.max(14, hy - 14), effectiveZoom);
-                drawDimensionBadge(gridCtx, `${btmH}px`, Math.min(cropBoxState.w - 32, 40), Math.min(cropBoxState.h - 14, hy + 14), effectiveZoom);
+                drawScreenDimensionBadge(viewportGridCtx, `${topH}px`, Math.min(boxScreenX + boxScreenW - 32, boxScreenX + 40), Math.max(boxScreenY + 14, hy - 14));
+                drawScreenDimensionBadge(viewportGridCtx, `${btmH}px`, Math.min(boxScreenX + boxScreenW - 32, boxScreenX + 40), Math.min(boxScreenY + boxScreenH - 14, hy + 14));
             }
-            gridCtx.restore();
+            viewportGridCtx.restore();
         }
 
         // --- Layer 4: Brush Hover Range Preview (筆刷懸停預覽) ---
@@ -1534,48 +1627,49 @@ document.addEventListener('DOMContentLoaded', () => {
                     minY = Math.min(minY, rowBounds[row]);
                     maxY = Math.max(maxY, rowBounds[row + 1]);
                 }
-                const bw = maxX - minX;
-                const bh = maxY - minY;
+                const hovScreenX = boxScreenX + minX * currentZoom;
+                const hovScreenY = boxScreenY + minY * currentZoom;
+                const hovScreenW = (maxX - minX) * currentZoom;
+                const hovScreenH = (maxY - minY) * currentZoom;
 
-                gridCtx.save();
+                viewportGridCtx.save();
                 const curTool = tileBrushManager.getTool();
                 if (curTool === 'include') {
-                    gridCtx.fillStyle = 'rgba(34, 197, 94, 0.22)';
-                    gridCtx.strokeStyle = '#22c55e';
+                    viewportGridCtx.fillStyle = 'rgba(22, 163, 74, 0.35)';
+                    viewportGridCtx.strokeStyle = '#16a34a';
                 } else if (curTool === 'exclude') {
-                    gridCtx.fillStyle = 'rgba(239, 68, 68, 0.28)';
-                    gridCtx.strokeStyle = '#ef4444';
+                    viewportGridCtx.fillStyle = 'rgba(239, 68, 68, 0.30)';
+                    viewportGridCtx.strokeStyle = '#ef4444';
                 } else {
-                    gridCtx.fillStyle = 'rgba(148, 163, 184, 0.25)';
-                    gridCtx.strokeStyle = '#94a3b8';
+                    viewportGridCtx.fillStyle = 'rgba(148, 163, 184, 0.25)';
+                    viewportGridCtx.strokeStyle = '#94a3b8';
                 }
-                gridCtx.lineWidth = 2 / effectiveZoom;
-                gridCtx.setLineDash([4 / effectiveZoom, 3 / effectiveZoom]);
-                gridCtx.fillRect(minX, minY, bw, bh);
-                gridCtx.strokeRect(minX, minY, bw, bh);
-                gridCtx.restore();
+                viewportGridCtx.lineWidth = 2;
+                viewportGridCtx.setLineDash([4, 3]);
+                viewportGridCtx.fillRect(hovScreenX, hovScreenY, hovScreenW, hovScreenH);
+                viewportGridCtx.strokeRect(hovScreenX + 0.5, hovScreenY + 0.5, hovScreenW - 1, hovScreenH - 1);
+                viewportGridCtx.restore();
             }
         }
+
+        viewportGridCtx.restore();
     }
 
-    function drawDimensionBadge(ctx, text, cx, cy, effectiveZoom = 1.0) {
+    function drawScreenDimensionBadge(ctx, text, cx, cy) {
         ctx.save();
-        const fontSize = 10 / effectiveZoom;
-        ctx.font = `bold ${fontSize}px monospace`;
+        ctx.font = 'bold 11px monospace';
         const metrics = ctx.measureText(text);
-        const padX = 5 / effectiveZoom, padY = 3 / effectiveZoom;
-        const bw = metrics.width + padX * 2;
-        const bh = fontSize + padY * 2;
+        const bw = Math.max(38, metrics.width + 14);
+        const bh = 20;
         const bx = cx - bw / 2;
         const by = cy - bh / 2;
 
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
         ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 1 / effectiveZoom;
+        ctx.lineWidth = 1;
         ctx.shadowBlur = 0;
         ctx.beginPath();
-        const r = 3 / effectiveZoom;
-        if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, r); else ctx.rect(bx, by, bw, bh);
+        if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 4); else ctx.rect(bx, by, bw, bh);
         ctx.fill();
         ctx.stroke();
 
@@ -1600,6 +1694,13 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.classList.toggle('active', parseInt(btn.dataset.size, 10) === curSize);
         });
 
+        if (brushUndoBtn) {
+            brushUndoBtn.disabled = !tileBrushManager.canUndo();
+        }
+        if (brushRedoBtn) {
+            brushRedoBtn.disabled = !tileBrushManager.canRedo();
+        }
+
         if (cropBox) {
             if (curTool !== 'pointer') {
                 cropBox.classList.add('brush-mode');
@@ -1623,16 +1724,42 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    if (brushUndoBtn) {
+        brushUndoBtn.addEventListener('click', () => {
+            if (tileBrushManager.undo()) {
+                updateBrushToolbarUI();
+                recalculateAndDrawGrid();
+                statusText.textContent = '已復原上一步筆刷操作 (Ctrl+Z)';
+            }
+        });
+    }
+
+    if (brushRedoBtn) {
+        brushRedoBtn.addEventListener('click', () => {
+            if (tileBrushManager.redo()) {
+                updateBrushToolbarUI();
+                recalculateAndDrawGrid();
+                statusText.textContent = '已重做下一步筆刷操作 (Ctrl+Y)';
+            }
+        });
+    }
+
     if (clearMarksBtn) {
         clearMarksBtn.addEventListener('click', () => {
             tileBrushManager.clearAll();
             recalculateAndDrawGrid();
+            updateBrushToolbarUI();
             statusText.textContent = '已重設全圖所有確定與取消標記！';
         });
     }
 
     tileBrushManager.onChange(() => {
         recalculateAndDrawGrid();
+        if (currentMode === 'auto' && slicerEditor) {
+            slicerEditor.render();
+        }
+        if (brushUndoBtn) brushUndoBtn.disabled = !tileBrushManager.canUndo();
+        if (brushRedoBtn) brushRedoBtn.disabled = !tileBrushManager.canRedo();
     });
 
     // Global Brush Keyboard Shortcuts
@@ -1691,15 +1818,17 @@ document.addEventListener('DOMContentLoaded', () => {
     let startPanX = 0;
     let startPanY = 0;
 
-    function applyTransform() {
+    function applyTransform(isZoomChanged = false) {
         if (!editorWrapper) return;
         editorWrapper.style.transform = `translate(${panX}px, ${panY}px) scale(${currentZoom})`;
-        slicerEditor.setZoom(currentZoom);
-        if (zoomLevelDisplay) {
-            zoomLevelDisplay.textContent = `${Math.round(currentZoom * 100)}%`;
+        if (isZoomChanged) {
+            slicerEditor.setZoom(currentZoom);
+            if (zoomLevelDisplay) {
+                zoomLevelDisplay.textContent = `${Math.round(currentZoom * 100)}%`;
+            }
         }
         if (currentMode === 'grid') {
-            recalculateAndDrawGrid();
+            drawViewportGrid();
         }
     }
 
@@ -1712,7 +1841,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const ch = canvasContainer.clientHeight || 600;
         panX = Math.round((cw - ew * currentZoom) / 2);
         panY = Math.round((ch - eh * currentZoom) / 2);
-        applyTransform();
+        applyTransform(true);
     }
 
     function zoomTo(newZoom, centerX, centerY) {
@@ -1734,7 +1863,7 @@ document.addEventListener('DOMContentLoaded', () => {
         panY = mouseY - imgY * targetZoom;
         currentZoom = targetZoom;
 
-        applyTransform();
+        applyTransform(true);
     }
 
     // 1. 中鍵滾輪放大縮小
@@ -1751,6 +1880,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }, { passive: false });
 
     // 2. 中鍵及右鍵按下拖曳圖片預覽區 (Capture Phase 確保優先權)
+    let panRafId = null;
     canvasContainer.addEventListener('mousedown', (e) => {
         if (e.button === 1 || e.button === 2) {
             e.preventDefault();
@@ -1771,13 +1901,22 @@ document.addEventListener('DOMContentLoaded', () => {
             const dy = e.clientY - panStartY;
             panX = startPanX + dx;
             panY = startPanY + dy;
-            applyTransform();
+            if (!panRafId) {
+                panRafId = requestAnimationFrame(() => {
+                    applyTransform(false);
+                    panRafId = null;
+                });
+            }
         }
     });
 
     window.addEventListener('mouseup', (e) => {
         if (isPanning && (e.button === 1 || e.button === 2)) {
             isPanning = false;
+            if (panRafId) {
+                cancelAnimationFrame(panRafId);
+                panRafId = null;
+            }
             canvasContainer.classList.remove('is-panning');
         }
     });
@@ -1811,6 +1950,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (resetViewBtn) {
         resetViewBtn.addEventListener('click', resetView);
     }
+
+    window.addEventListener('resize', () => {
+        if (currentMode === 'grid') {
+            drawViewportGrid();
+        }
+    });
 
     // ============================================================
     // EXPORT SYSTEM (Selected PNG, Atlas JSON, Full ZIP)

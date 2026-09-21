@@ -438,6 +438,15 @@
                             <button class="brush-size-btn" data-size="4" title="4×4 格 (快捷鍵 4)">4×4</button>
                             <button class="brush-size-btn" data-size="5" title="5×5 格 (快捷鍵 5)">5×5</button>
                         </div>
+                        <span class="action-divider"></span>
+                        <div class="brush-history-group" role="group" aria-label="筆刷歷史">
+                            <button id="brushUndoBtn" class="btn btn-secondary btn-sm brush-tool-btn" disabled title="復原筆刷操作 (Ctrl+Z)">
+                                <i class="fa-solid fa-rotate-left"></i>
+                            </button>
+                            <button id="brushRedoBtn" class="btn btn-secondary btn-sm brush-tool-btn" disabled title="重做筆刷操作 (Ctrl+Y)">
+                                <i class="fa-solid fa-rotate-right"></i>
+                            </button>
+                        </div>
                         <button id="clearMarksBtn" class="btn btn-secondary btn-xs" title="清空全圖確定與取消標記">
                             <i class="fa-solid fa-rotate-left" style="font-size: 10px;"></i> 重設標記
                         </button>
@@ -467,7 +476,8 @@
                     <!-- Single Crop-Box Layer (for Grid Mode) -->
                     <div class="shading-overlay" id="shadingOverlay" style="display: none;"></div>
                     <div class="crop-box" id="cropBox" style="display: none;">
-                        <canvas id="gridCanvas"></canvas>
+                        <svg id="gridSvg" class="grid-svg-overlay"></svg>
+                        <canvas id="gridCanvas" style="display: none;"></canvas>
                         <div class="handle handle-nw" data-handle="nw"></div>
                         <div class="handle handle-n" data-handle="n"></div>
                         <div class="handle handle-ne" data-handle="ne"></div>
@@ -475,9 +485,11 @@
                         <div class="handle handle-se" data-handle="se"></div>
                         <div class="handle handle-s" data-handle="s"></div>
                         <div class="handle handle-sw" data-handle="sw"></div>
-                        <div class="handle handle-w" data-handle="w"></div>
                     </div>
                 </div>
+
+                <!-- Viewport Grid Canvas (Directly inside canvasContainer, NEVER scaled by CSS, always true 1px lines) -->
+                <canvas id="viewportGridCanvas" class="viewport-grid-canvas"></canvas>
 
                 <!-- Floating Zoom Toolbar in Canvas -->
                 <div class="canvas-zoom-controls" id="canvasZoomControls" style="display: none;">
@@ -493,13 +505,14 @@
                 <div class="shortcut-hints" id="shortcutHints">
                     <span><kbd>滾輪</kbd> 縮放</span>
                     <span><kbd>中鍵/右鍵拖曳</kbd> 平移畫布</span>
-                    <span><kbd>B</kbd> 確定筆刷 (綠)</span>
-                    <span><kbd>X</kbd> 取消筆刷 (紅)</span>
+                    <span><kbd>Ctrl+Z</kbd> 復原筆刷</span>
+                    <span><kbd>Ctrl+Y</kbd> 重做筆刷</span>
+                    <span><kbd>B</kbd> 確定 (綠)</span>
+                    <span><kbd>X</kbd> 取消 (紅)</span>
                     <span><kbd>1~5</kbd> 筆刷大小</span>
                     <span><kbd>拖曳塗抹</kbd> 連續標記</span>
                     <span><kbd>V</kbd> 指標模式</span>
                     <span><kbd>H</kbd> 隱藏/顯示格線</span>
-                    <span><kbd>Delete</kbd> 刪除線條/標記</span>
                 </div>
             </div>
 
