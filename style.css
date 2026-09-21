@@ -910,6 +910,14 @@ select:focus {
     box-sizing: border-box;
 }
 
+.crop-box.col-resizing {
+    cursor: col-resize !important;
+}
+
+.crop-box.row-resizing {
+    cursor: row-resize !important;
+}
+
 #gridCanvas {
     position: absolute;
     top: 0;

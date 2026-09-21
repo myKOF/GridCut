@@ -54,7 +54,8 @@ export class BoundingBoxRefiner {
                 height: Math.round(ph),
                 confidence: confEval.score,
                 confidenceCategory: confEval.category,
-                confidenceBreakdown: confEval.breakdown
+                confidenceBreakdown: confEval.breakdown,
+                reason: b.reason || 'enclosed by gutters'
             };
         });
 
@@ -106,7 +107,8 @@ export class BoundingBoxRefiner {
             x: minX,
             y: minY,
             width: maxX - minX + 1,
-            height: maxY - minY + 1
+            height: maxY - minY + 1,
+            reason: b.reason || 'enclosed by gutters'
         };
     }
 

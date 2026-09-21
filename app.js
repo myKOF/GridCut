@@ -4,6 +4,7 @@ import { AtlasAnalyzer } from './src/analyzer/AtlasAnalyzer.js?v=2.3.0';
 import { MetadataDetector } from './src/analyzer/MetadataDetector.js?v=2.3.0';
 import { AlphaSegmenter } from './src/analyzer/AlphaSegmenter.js?v=2.3.0';
 import { BackgroundSegmenter } from './src/analyzer/BackgroundSegmenter.js?v=2.3.0';
+import { DebugVisualizer } from './src/analyzer/DebugVisualizer.js?v=2.3.0';
 import { AtlasSlicerEditor } from './src/editor/AtlasSlicerEditor.js?v=2.3.0';
 import { AtlasExporter } from './src/editor/AtlasExporter.js?v=2.3.0';
 
@@ -79,11 +80,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const confBorderText = document.getElementById('confBorderText');
     const confGutterText = document.getElementById('confGutterText');
     const confDensityText = document.getElementById('confDensityText');
+    const boxPropReasonRow = document.getElementById('boxPropReasonRow');
+    const boxPropReasonText = document.getElementById('boxPropReasonText');
+
+    // Debug & Stage 6 Inputs
+    const debugViewSelect = document.getElementById('debugViewSelect');
+    const debugCanvas = document.getElementById('debugCanvas');
+    const separatorConfidenceInput = document.getElementById('separatorConfidence');
+    const gutterWidthInput = document.getElementById('gutterWidth');
+    const minComponentAreaInput = document.getElementById('minComponentArea');
+    const occupancyThresholdInput = document.getElementById('occupancyThreshold');
 
     // Grid Mode Inputs
     const tileWidthInput = document.getElementById('tileWidth');
     const tileHeightInput = document.getElementById('tileHeight');
     const resetCropBtn = document.getElementById('resetCropBtn');
+    const gridCustomBadge = document.getElementById('gridCustomBadge');
+    const resetUniformGridBtn = document.getElementById('resetUniformGridBtn');
+    const clearInnerGridLinesBtn = document.getElementById('clearInnerGridLinesBtn');
 
     // Export Inputs & Buttons
     const exportFormatSelect = document.getElementById('exportFormat');
@@ -132,6 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentMode = 'auto'; // 'auto' | 'grid'
     let cachedMetadata = null;
     let isDrawingMode = false;
+    let currentDebugData = null;
 
     // Initialize AtlasSlicerEditor (UI Layer Decoupled)
     const slicerEditor = new AtlasSlicerEditor(multiBoxContainer, {
@@ -153,6 +168,16 @@ document.addEventListener('DOMContentLoaded', () => {
     let gridDragType = null;
     let gridStartX = 0, gridStartY = 0;
     let startCropState = { x: 0, y: 0, w: 0, h: 0 };
+
+    // Custom Grid Lines State (Manual non-uniform grid adjustment)
+    const gridLinesState = {
+        colLines: [], // relative X positions inside cropBox (0 < x < cropBoxState.w)
+        rowLines: [], // relative Y positions inside cropBox (0 < y < cropBoxState.h)
+        isCustomized: false,
+        hoveredLine: null, // { type: 'col' | 'row', index: number }
+        activeLine: null,  // { type: 'col' | 'row', index: number }
+        dragLineInitPos: 0
+    };
 
     // --- MODE SWITCHING ---
 
@@ -387,8 +412,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const boxPadding = boxPaddingInput ? Math.max(0, isNaN(parseInt(boxPaddingInput.value)) ? 0 : parseInt(boxPaddingInput.value)) : 0;
         const morphCloseRadius = morphCloseRadiusInput ? Math.max(0, isNaN(parseInt(morphCloseRadiusInput.value)) ? 0 : parseInt(morphCloseRadiusInput.value)) : 0;
         const groupDistance = groupDistanceInput ? Math.max(0, isNaN(parseInt(groupDistanceInput.value)) ? 0 : parseInt(groupDistanceInput.value)) : 0;
-        const enableWatershed = enableWatershedInput ? enableWatershedInput.checked : true;
+        const enableWatershed = enableWatershedInput ? enableWatershedInput.checked : false;
         const watershedDistance = watershedDistanceInput ? Math.max(4, isNaN(parseInt(watershedDistanceInput.value)) ? 14 : parseInt(watershedDistanceInput.value)) : 14;
+
+        // Stage 6: Minimum Sprite Constraints & XY-Cut settings
+        const separatorConfidence = separatorConfidenceInput ? (parseFloat(separatorConfidenceInput.value) || 0.20) : 0.20;
+        const gutterWidth = gutterWidthInput ? Math.max(1, parseInt(gutterWidthInput.value) || 1) : 1;
+        const minComponentArea = minComponentAreaInput ? Math.max(1, parseInt(minComponentAreaInput.value) || 4) : 4;
+        const occupancyThreshold = occupancyThresholdInput ? (parseFloat(occupancyThresholdInput.value) || 0.04) : 0.04;
 
         // Async execution to avoid freezing browser render
         setTimeout(async () => {
@@ -398,7 +429,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     alphaThreshold,
                     bgTolerance,
                     minSize,
+                    minSpriteWidth: minSize,
+                    minSpriteHeight: minSize,
+                    minSpriteArea: minSize * minSize,
+                    minComponentArea,
                     mergeGap,
+                    mergeDistance: mergeGap || groupDistance,
+                    separatorConfidence,
+                    gutterWidth,
+                    occupancyThreshold,
                     padding: boxPadding,
                     morphCloseRadius,
                     groupDistance,
@@ -406,10 +445,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     watershedDistance
                 }, cachedMetadata);
 
+                currentDebugData = result.debugData;
                 slicerEditor.loadSprites(result.sprites);
+                renderCurrentDebugView();
+
                 const count = result.sprites.length;
                 const wsInfo = result.stats.watershedSplitCount ? `, 分水嶺切出 +${result.stats.watershedSplitCount} 個` : '';
-                statusText.textContent = `成功識別 ${count} 個 Sprite (耗時 ${result.stats.durationMs}ms, 聚合前: ${result.stats.rawComponentCount} 個${wsInfo})`;
+                statusText.textContent = `成功識別 ${count} 個 Sprite (耗時 ${result.stats.durationMs}ms, 候選區域: ${result.stats.candidateCount || '-'} 個, Gutter: ${result.stats.gutterCount || '-'} 條${wsInfo})`;
                 if (findUncertainBtn) {
                     const uncertain = result.sprites.filter(s => (s.confidence || 1.0) < 0.8);
                     findUncertainBtn.disabled = uncertain.length === 0;
@@ -419,6 +461,32 @@ document.addEventListener('DOMContentLoaded', () => {
                 statusText.textContent = '自動識別發生錯誤：' + err.message;
             }
         }, 30);
+    }
+
+    // ============================================================
+    // DEBUG VISUALIZATION CONTROLLER (PHASE 7)
+    // ============================================================
+    function renderCurrentDebugView() {
+        if (!debugCanvas || !originalImg) return;
+        const mode = debugViewSelect ? debugViewSelect.value : 'original';
+
+        if (mode === 'original' || mode === 'none' || !currentDebugData) {
+            debugCanvas.style.display = 'none';
+            const ctx = debugCanvas.getContext('2d');
+            if (ctx) ctx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+            return;
+        }
+
+        debugCanvas.style.display = 'block';
+        const width = originalImg.naturalWidth || originalImg.width;
+        const height = originalImg.naturalHeight || originalImg.height;
+        DebugVisualizer.render(mode, currentDebugData, debugCanvas, width, height, slicerEditor.getSprites());
+    }
+
+    if (debugViewSelect) {
+        debugViewSelect.addEventListener('change', () => {
+            renderCurrentDebugView();
+        });
     }
 
     // ============================================================
@@ -645,6 +713,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 confDetailRow.style.display = 'none';
             }
 
+            // 顯示檢測依據 (Detection Reason)
+            if (boxPropReasonRow && boxPropReasonText) {
+                boxPropReasonText.textContent = s.reason || 'enclosed by strong gutters';
+                boxPropReasonRow.style.display = 'block';
+            }
+
             if (mergeBoxesBtn) mergeBoxesBtn.disabled = true;
             if (splitHBtn) splitHBtn.disabled = false;
             if (splitVBtn) splitVBtn.disabled = false;
@@ -656,6 +730,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 selectedBoxConfidence.className = 'badge-confidence confidence-high';
             }
             if (confDetailRow) confDetailRow.style.display = 'none';
+            if (boxPropReasonRow) boxPropReasonRow.style.display = 'none';
 
             boxPropX.value = '';
             boxPropY.value = '';
@@ -726,6 +801,55 @@ document.addEventListener('DOMContentLoaded', () => {
                 e.preventDefault();
                 slicerEditor.nudgeSelected(0, step);
             }
+        } else if (currentMode === 'grid') {
+            // Delete key: Remove active grid divider line
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                const active = gridLinesState.activeLine || gridLinesState.hoveredLine;
+                if (active) {
+                    e.preventDefault();
+                    if (active.type === 'col' && active.index < gridLinesState.colLines.length) {
+                        gridLinesState.colLines.splice(active.index, 1);
+                    } else if (active.type === 'row' && active.index < gridLinesState.rowLines.length) {
+                        gridLinesState.rowLines.splice(active.index, 1);
+                    }
+                    gridLinesState.activeLine = null;
+                    gridLinesState.hoveredLine = null;
+                    gridLinesState.isCustomized = true;
+                    updateGridBadge();
+                    recalculateAndDrawGrid();
+                    statusText.textContent = '已刪除選取的網格分割線';
+                }
+                return;
+            }
+
+            // Arrow keys: Nudge active divider line
+            const active = gridLinesState.activeLine || gridLinesState.hoveredLine;
+            if (active) {
+                const step = (e.shiftKey ? 5 : 1) / scaleRatio;
+                if (active.type === 'col' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+                    e.preventDefault();
+                    const dx = e.key === 'ArrowLeft' ? -step : step;
+                    const idx = active.index;
+                    const prevX = idx > 0 ? gridLinesState.colLines[idx - 1] : 0;
+                    const nextX = idx < gridLinesState.colLines.length - 1 ? gridLinesState.colLines[idx + 1] : cropBoxState.w;
+                    const minGap = Math.max(4, 6 / scaleRatio);
+                    gridLinesState.colLines[idx] = Math.max(prevX + minGap, Math.min(nextX - minGap, gridLinesState.colLines[idx] + dx));
+                    gridLinesState.isCustomized = true;
+                    updateGridBadge();
+                    recalculateAndDrawGrid();
+                } else if (active.type === 'row' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+                    e.preventDefault();
+                    const dy = e.key === 'ArrowUp' ? -step : step;
+                    const idx = active.index;
+                    const prevY = idx > 0 ? gridLinesState.rowLines[idx - 1] : 0;
+                    const nextY = idx < gridLinesState.rowLines.length - 1 ? gridLinesState.rowLines[idx + 1] : cropBoxState.h;
+                    const minGap = Math.max(4, 6 / scaleRatio);
+                    gridLinesState.rowLines[idx] = Math.max(prevY + minGap, Math.min(nextY - minGap, gridLinesState.rowLines[idx] + dy));
+                    gridLinesState.isCustomized = true;
+                    updateGridBadge();
+                    recalculateAndDrawGrid();
+                }
+            }
         }
     });
 
@@ -794,19 +918,55 @@ document.addEventListener('DOMContentLoaded', () => {
             downloadBtn.disabled = total === 0;
             if (exportJsonBtn) exportJsonBtn.disabled = total === 0;
         } else {
-            const targetTileW = parseInt(tileWidthInput.value) || 128;
-            const targetTileH = parseInt(tileHeightInput.value) || 128;
-            const origCropW = Math.round(cropBoxState.w * scaleRatio);
-            const origCropH = Math.round(cropBoxState.h * scaleRatio);
-            const total = Math.ceil(origCropW / targetTileW) * Math.ceil(origCropH / targetTileH);
+            const cols = gridLinesState.colLines.length + 1;
+            const rows = gridLinesState.rowLines.length + 1;
+            const total = cols * rows;
             downloadBtn.disabled = total <= 0;
-            if (exportJsonBtn) exportJsonBtn.disabled = true;
+            if (exportJsonBtn) exportJsonBtn.disabled = total <= 0;
         }
     }
 
     // ============================================================
-    // GRID MODE LOGIC (PRESERVED & FULLY COMPATIBLE)
+    // GRID MODE LOGIC (NON-UNIFORM DRAGGABLE GRID LINES)
     // ============================================================
+
+    function syncUniformGridLines() {
+        if (!cropBoxState.w || !cropBoxState.h) return;
+        const targetTileW = Math.max(8, parseInt(tileWidthInput.value) || 128);
+        const targetTileH = Math.max(8, parseInt(tileHeightInput.value) || 128);
+        const stepX = (targetTileW / scaleRatio);
+        const stepY = (targetTileH / scaleRatio);
+
+        const cols = Math.ceil((cropBoxState.w * scaleRatio) / targetTileW);
+        const rows = Math.ceil((cropBoxState.h * scaleRatio) / targetTileH);
+
+        gridLinesState.colLines = [];
+        for (let i = 1; i < cols; i++) {
+            const x = i * stepX;
+            if (x < cropBoxState.w - 4) {
+                gridLinesState.colLines.push(x);
+            }
+        }
+
+        gridLinesState.rowLines = [];
+        for (let j = 1; j < rows; j++) {
+            const y = j * stepY;
+            if (y < cropBoxState.h - 4) {
+                gridLinesState.rowLines.push(y);
+            }
+        }
+
+        gridLinesState.isCustomized = false;
+        gridLinesState.hoveredLine = null;
+        gridLinesState.activeLine = null;
+        updateGridBadge();
+    }
+
+    function updateGridBadge() {
+        if (gridCustomBadge) {
+            gridCustomBadge.style.display = gridLinesState.isCustomized ? 'inline-block' : 'none';
+        }
+    }
 
     function resetCropToFull() {
         if (!originalImg) return;
@@ -820,6 +980,7 @@ document.addEventListener('DOMContentLoaded', () => {
         cropBoxState = { x: 0, y: 0, w: renderW, h: renderH };
         if (currentMode === 'grid') {
             updateCropBoxUI();
+            syncUniformGridLines();
             recalculateAndDrawGrid();
         } else {
             cropBox.style.display = 'none';
@@ -832,6 +993,108 @@ document.addEventListener('DOMContentLoaded', () => {
 
     resetCropBtn.addEventListener('click', resetCropToFull);
 
+    if (resetUniformGridBtn) {
+        resetUniformGridBtn.addEventListener('click', () => {
+            syncUniformGridLines();
+            recalculateAndDrawGrid();
+            statusText.textContent = '已將網格重設為均勻等寬等高！';
+        });
+    }
+
+    if (clearInnerGridLinesBtn) {
+        clearInnerGridLinesBtn.addEventListener('click', () => {
+            gridLinesState.colLines = [];
+            gridLinesState.rowLines = [];
+            gridLinesState.isCustomized = true;
+            gridLinesState.hoveredLine = null;
+            gridLinesState.activeLine = null;
+            updateGridBadge();
+            recalculateAndDrawGrid();
+            statusText.textContent = '已清除所有內部格線，僅保留單一大裁切框。';
+        });
+    }
+
+    // Grid Hit Testing & Cursor Update
+    cropBox.addEventListener('mousemove', (e) => {
+        if (isGridDragging || currentMode !== 'grid') return;
+        if (e.target.classList.contains('handle')) return;
+
+        const rect = cropBox.getBoundingClientRect();
+        const relX = (e.clientX - rect.left) / currentZoom;
+        const relY = (e.clientY - rect.top) / currentZoom;
+        const hitTol = 6;
+
+        let foundCol = -1;
+        for (let i = 0; i < gridLinesState.colLines.length; i++) {
+            if (Math.abs(relX - gridLinesState.colLines[i]) <= hitTol) {
+                foundCol = i;
+                break;
+            }
+        }
+
+        let foundRow = -1;
+        for (let j = 0; j < gridLinesState.rowLines.length; j++) {
+            if (Math.abs(relY - gridLinesState.rowLines[j]) <= hitTol) {
+                foundRow = j;
+                break;
+            }
+        }
+
+        if (foundCol !== -1) {
+            cropBox.classList.add('col-resizing');
+            cropBox.classList.remove('row-resizing');
+            gridLinesState.hoveredLine = { type: 'col', index: foundCol };
+            recalculateAndDrawGrid();
+        } else if (foundRow !== -1) {
+            cropBox.classList.add('row-resizing');
+            cropBox.classList.remove('col-resizing');
+            gridLinesState.hoveredLine = { type: 'row', index: foundRow };
+            recalculateAndDrawGrid();
+        } else {
+            cropBox.classList.remove('col-resizing', 'row-resizing');
+            if (gridLinesState.hoveredLine) {
+                gridLinesState.hoveredLine = null;
+                recalculateAndDrawGrid();
+            }
+        }
+    });
+
+    cropBox.addEventListener('mouseleave', () => {
+        cropBox.classList.remove('col-resizing', 'row-resizing');
+        if (!isGridDragging && gridLinesState.hoveredLine) {
+            gridLinesState.hoveredLine = null;
+            recalculateAndDrawGrid();
+        }
+    });
+
+    // Double-click to add a new cut divider line
+    cropBox.addEventListener('dblclick', (e) => {
+        if (currentMode !== 'grid' || isGridDragging) return;
+        if (e.target.classList.contains('handle')) return;
+
+        const rect = cropBox.getBoundingClientRect();
+        const relX = (e.clientX - rect.left) / currentZoom;
+        const relY = (e.clientY - rect.top) / currentZoom;
+
+        // Determine orientation by distance to borders/lines
+        const minDistCol = Math.min(...gridLinesState.colLines.map(x => Math.abs(relX - x)), relX, cropBoxState.w - relX);
+        const minDistRow = Math.min(...gridLinesState.rowLines.map(y => Math.abs(relY - y)), relY, cropBoxState.h - relY);
+
+        if (minDistCol > minDistRow) {
+            gridLinesState.colLines.push(relX);
+            gridLinesState.colLines.sort((a, b) => a - b);
+            statusText.textContent = `已新增一條垂直網格線 (X: ${Math.round(relX * scaleRatio)}px)`;
+        } else {
+            gridLinesState.rowLines.push(relY);
+            gridLinesState.rowLines.sort((a, b) => a - b);
+            statusText.textContent = `已新增一條水平網格線 (Y: ${Math.round(relY * scaleRatio)}px)`;
+        }
+
+        gridLinesState.isCustomized = true;
+        updateGridBadge();
+        recalculateAndDrawGrid();
+    });
+
     cropBox.addEventListener('mousedown', startGridDrag);
     cropBox.addEventListener('touchstart', startGridDrag, { passive: false });
 
@@ -839,8 +1102,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.button === 1 || e.button === 2) return;
         if (e.target.classList.contains('handle')) {
             gridDragType = e.target.dataset.handle;
+            gridLinesState.hoveredLine = null;
+            gridLinesState.activeLine = null;
+        } else if (gridLinesState.hoveredLine) {
+            // Drag specific vertical or horizontal grid line!
+            gridDragType = gridLinesState.hoveredLine.type + '-line';
+            gridLinesState.activeLine = { ...gridLinesState.hoveredLine };
+            gridLinesState.dragLineInitPos = (gridLinesState.hoveredLine.type === 'col')
+                ? gridLinesState.colLines[gridLinesState.hoveredLine.index]
+                : gridLinesState.rowLines[gridLinesState.hoveredLine.index];
         } else if (e.target === cropBox || e.target === gridCanvas) {
             gridDragType = 'move';
+            gridLinesState.activeLine = null;
         } else {
             return;
         }
@@ -862,12 +1135,48 @@ document.addEventListener('DOMContentLoaded', () => {
         const containerH = sourceImage.clientHeight;
         const minBoxSize = 30;
 
+        // 1. Drag specific vertical divider line
+        if (gridDragType === 'col-line' && gridLinesState.activeLine) {
+            const idx = gridLinesState.activeLine.index;
+            const prevX = idx > 0 ? gridLinesState.colLines[idx - 1] : 0;
+            const nextX = idx < gridLinesState.colLines.length - 1 ? gridLinesState.colLines[idx + 1] : cropBoxState.w;
+            const minGap = Math.max(4, 6 / scaleRatio);
+
+            let newX = gridLinesState.dragLineInitPos + deltaX;
+            newX = Math.max(prevX + minGap, Math.min(nextX - minGap, newX));
+
+            gridLinesState.colLines[idx] = newX;
+            gridLinesState.isCustomized = true;
+            updateGridBadge();
+            recalculateAndDrawGrid();
+            return;
+        }
+
+        // 2. Drag specific horizontal divider line
+        if (gridDragType === 'row-line' && gridLinesState.activeLine) {
+            const idx = gridLinesState.activeLine.index;
+            const prevY = idx > 0 ? gridLinesState.rowLines[idx - 1] : 0;
+            const nextY = idx < gridLinesState.rowLines.length - 1 ? gridLinesState.rowLines[idx + 1] : cropBoxState.h;
+            const minGap = Math.max(4, 6 / scaleRatio);
+
+            let newY = gridLinesState.dragLineInitPos + deltaY;
+            newY = Math.max(prevY + minGap, Math.min(nextY - minGap, newY));
+
+            gridLinesState.rowLines[idx] = newY;
+            gridLinesState.isCustomized = true;
+            updateGridBadge();
+            recalculateAndDrawGrid();
+            return;
+        }
+
+        // 3. Move entire crop box
         if (gridDragType === 'move') {
             let newX = Math.max(0, Math.min(containerW - startCropState.w, startCropState.x + deltaX));
             let newY = Math.max(0, Math.min(containerH - startCropState.h, startCropState.y + deltaY));
             cropBoxState.x = newX;
             cropBoxState.y = newY;
         } else {
+            // 4. Resize crop box via outer handles
             let nx = startCropState.x;
             let ny = startCropState.y;
             let nw = startCropState.w;
@@ -891,6 +1200,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (ny + ph <= containerH && ph >= minBoxSize) nh = ph;
             }
 
+            // Scale existing divider lines proportionally with box resizing
+            if (startCropState.w > 0 && nw !== startCropState.w) {
+                const scaleW = nw / startCropState.w;
+                gridLinesState.colLines = gridLinesState.colLines.map(x => x * scaleW);
+            }
+            if (startCropState.h > 0 && nh !== startCropState.h) {
+                const scaleH = nh / startCropState.h;
+                gridLinesState.rowLines = gridLinesState.rowLines.map(y => y * scaleH);
+            }
+
             cropBoxState.x = nx;
             cropBoxState.y = ny;
             cropBoxState.w = nw;
@@ -904,6 +1223,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function endGridDrag() {
         isGridDragging = false;
         gridDragType = null;
+        if (gridLinesState.activeLine) {
+            gridLinesState.activeLine = null;
+            recalculateAndDrawGrid();
+        }
     }
 
     function updateCropBoxUI() {
@@ -919,16 +1242,17 @@ document.addEventListener('DOMContentLoaded', () => {
     function recalculateAndDrawGrid() {
         if (!originalImg || currentMode !== 'grid') return;
 
-        const targetTileW = Math.max(8, parseInt(tileWidthInput.value) || 128);
-        const targetTileH = Math.max(8, parseInt(tileHeightInput.value) || 128);
+        // If lines not yet initialized and not customized, sync uniform
+        if (!gridLinesState.isCustomized && gridLinesState.colLines.length === 0 && gridLinesState.rowLines.length === 0) {
+            syncUniformGridLines();
+        }
 
         const origCropW = Math.round(cropBoxState.w * scaleRatio);
         const origCropH = Math.round(cropBoxState.h * scaleRatio);
-
         cropSizeSpan.textContent = `${origCropW} × ${origCropH} px`;
 
-        const cols = Math.ceil(origCropW / targetTileW);
-        const rows = Math.ceil(origCropH / targetTileH);
+        const cols = gridLinesState.colLines.length + 1;
+        const rows = gridLinesState.rowLines.length + 1;
         const total = cols * rows;
 
         colsCountSpan.textContent = cols;
@@ -938,38 +1262,123 @@ document.addEventListener('DOMContentLoaded', () => {
         gridCtx.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
         if (cols <= 0 || rows <= 0) return;
 
-        const stepX = (targetTileW / scaleRatio);
-        const stepY = (targetTileH / scaleRatio);
-
+        // Pass 1: Semi-transparent dark drop shadow
         gridCtx.lineWidth = 1;
-        gridCtx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+        gridCtx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
         gridCtx.setLineDash([4, 4]);
-        drawGridLines(cols, rows, stepX, stepY);
 
-        gridCtx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-        gridCtx.lineDashOffset = 4;
-        drawGridLines(cols, rows, stepX, stepY);
-    }
-
-    function drawGridLines(cols, rows, stepX, stepY) {
-        for (let i = 1; i <= cols; i++) {
-            const x = Math.min(gridCanvas.width - 1, i * stepX);
+        for (let i = 0; i < gridLinesState.colLines.length; i++) {
+            const x = Math.round(gridLinesState.colLines[i]);
             gridCtx.beginPath();
             gridCtx.moveTo(x, 0);
             gridCtx.lineTo(x, gridCanvas.height);
             gridCtx.stroke();
         }
-        for (let j = 1; j <= rows; j++) {
-            const y = Math.min(gridCanvas.height - 1, j * stepY);
+        for (let j = 0; j < gridLinesState.rowLines.length; j++) {
+            const y = Math.round(gridLinesState.rowLines[j]);
             gridCtx.beginPath();
             gridCtx.moveTo(0, y);
             gridCtx.lineTo(gridCanvas.width, y);
             gridCtx.stroke();
         }
+
+        // Pass 2: Crisp dashed white lines
+        gridCtx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+        gridCtx.lineDashOffset = 4;
+
+        for (let i = 0; i < gridLinesState.colLines.length; i++) {
+            const x = Math.round(gridLinesState.colLines[i]);
+            gridCtx.beginPath();
+            gridCtx.moveTo(x, 0);
+            gridCtx.lineTo(x, gridCanvas.height);
+            gridCtx.stroke();
+        }
+        for (let j = 0; j < gridLinesState.rowLines.length; j++) {
+            const y = Math.round(gridLinesState.rowLines[j]);
+            gridCtx.beginPath();
+            gridCtx.moveTo(0, y);
+            gridCtx.lineTo(gridCanvas.width, y);
+            gridCtx.stroke();
+        }
+
+        gridCtx.setLineDash([]); // Reset dash
+
+        // Highlight Hovered or Dragged Line with size badges
+        const highlight = gridLinesState.activeLine || gridLinesState.hoveredLine;
+        if (highlight) {
+            gridCtx.save();
+            gridCtx.lineWidth = 2;
+            gridCtx.strokeStyle = '#38bdf8';
+            gridCtx.shadowColor = '#38bdf8';
+            gridCtx.shadowBlur = 8;
+
+            if (highlight.type === 'col' && highlight.index < gridLinesState.colLines.length) {
+                const hx = Math.round(gridLinesState.colLines[highlight.index]);
+                gridCtx.beginPath();
+                gridCtx.moveTo(hx, 0);
+                gridCtx.lineTo(hx, gridCanvas.height);
+                gridCtx.stroke();
+
+                const prevX = highlight.index > 0 ? gridLinesState.colLines[highlight.index - 1] : 0;
+                const nextX = highlight.index < gridLinesState.colLines.length - 1 ? gridLinesState.colLines[highlight.index + 1] : cropBoxState.w;
+                const leftW = Math.round((hx - prevX) * scaleRatio);
+                const rightW = Math.round((nextX - hx) * scaleRatio);
+
+                drawDimensionBadge(gridCtx, `${leftW}px`, Math.max(24, hx - 30), Math.min(gridCanvas.height - 18, 24));
+                drawDimensionBadge(gridCtx, `${rightW}px`, Math.min(gridCanvas.width - 24, hx + 30), Math.min(gridCanvas.height - 18, 24));
+            } else if (highlight.type === 'row' && highlight.index < gridLinesState.rowLines.length) {
+                const hy = Math.round(gridLinesState.rowLines[highlight.index]);
+                gridCtx.beginPath();
+                gridCtx.moveTo(0, hy);
+                gridCtx.lineTo(gridCanvas.width, hy);
+                gridCtx.stroke();
+
+                const prevY = highlight.index > 0 ? gridLinesState.rowLines[highlight.index - 1] : 0;
+                const nextY = highlight.index < gridLinesState.rowLines.length - 1 ? gridLinesState.rowLines[highlight.index + 1] : cropBoxState.h;
+                const topH = Math.round((hy - prevY) * scaleRatio);
+                const btmH = Math.round((nextY - hy) * scaleRatio);
+
+                drawDimensionBadge(gridCtx, `${topH}px`, Math.min(gridCanvas.width - 32, 40), Math.max(14, hy - 14));
+                drawDimensionBadge(gridCtx, `${btmH}px`, Math.min(gridCanvas.width - 32, 40), Math.min(gridCanvas.height - 14, hy + 14));
+            }
+            gridCtx.restore();
+        }
     }
 
-    tileWidthInput.addEventListener('input', recalculateAndDrawGrid);
-    tileHeightInput.addEventListener('input', recalculateAndDrawGrid);
+    function drawDimensionBadge(ctx, text, cx, cy) {
+        ctx.save();
+        ctx.font = 'bold 10px monospace';
+        const metrics = ctx.measureText(text);
+        const padX = 5, padY = 3;
+        const bw = metrics.width + padX * 2;
+        const bh = 16;
+        const bx = cx - bw / 2;
+        const by = cy - bh / 2;
+
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 1;
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 3); else ctx.rect(bx, by, bw, bh);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#38bdf8';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, cx, cy);
+        ctx.restore();
+    }
+
+    tileWidthInput.addEventListener('input', () => {
+        syncUniformGridLines();
+        recalculateAndDrawGrid();
+    });
+    tileHeightInput.addEventListener('input', () => {
+        syncUniformGridLines();
+        recalculateAndDrawGrid();
+    });
 
     window.addEventListener('mousemove', (e) => {
         if (isGridDragging) handleGridDragMove(e.clientX, e.clientY, e);
@@ -1142,7 +1551,44 @@ document.addEventListener('DOMContentLoaded', () => {
     // 2. Export atlas.json
     if (exportJsonBtn) {
         exportJsonBtn.addEventListener('click', () => {
-            if (!originalImg || !slicerEditor) return;
+            if (!originalImg) return;
+
+            if (currentMode === 'grid') {
+                const realColBounds = [0, ...gridLinesState.colLines, cropBoxState.w].map(x => Math.round(x * scaleRatio));
+                const realRowBounds = [0, ...gridLinesState.rowLines, cropBoxState.h].map(y => Math.round(y * scaleRatio));
+                const origCropX = Math.round(cropBoxState.x * scaleRatio);
+                const origCropY = Math.round(cropBoxState.y * scaleRatio);
+
+                const gridSprites = [];
+                let idx = 1;
+                for (let r = 0; r < realRowBounds.length - 1; r++) {
+                    for (let c = 0; c < realColBounds.length - 1; c++) {
+                        const cellX = realColBounds[c];
+                        const cellY = realRowBounds[r];
+                        const cellW = Math.max(1, realColBounds[c + 1] - cellX);
+                        const cellH = Math.max(1, realRowBounds[r + 1] - cellY);
+
+                        gridSprites.push({
+                            id: `tile_${String(idx++).padStart(3, '0')}`,
+                            x: origCropX + cellX,
+                            y: origCropY + cellY,
+                            width: cellW,
+                            height: cellH,
+                            confidence: 1.0
+                        });
+                    }
+                }
+                AtlasExporter.exportJSON(
+                    originalImg,
+                    gridSprites,
+                    'atlas.json',
+                    currentImageFileName || 'atlas.png'
+                );
+                statusText.textContent = `已成功匯出網格 atlas.json 座標資料！`;
+                return;
+            }
+
+            if (!slicerEditor) return;
             const sprites = slicerEditor.getSprites();
             if (sprites.length === 0) {
                 alert('目前畫面上沒有任何 Sprite 框體！');
@@ -1192,17 +1638,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 statusText.textContent = `切圖打包完成，已匯出全部 ${sprites.length} 張小圖及 atlas.json！`;
             } else {
-                // Slicing in Grid Mode
-                const targetTileW = Math.max(8, parseInt(tileWidthInput.value) || 128);
-                const targetTileH = Math.max(8, parseInt(tileHeightInput.value) || 128);
-
+                // Slicing in Grid Mode (Non-uniform custom grid lines support)
+                const realColBounds = [0, ...gridLinesState.colLines, cropBoxState.w].map(x => Math.round(x * scaleRatio));
+                const realRowBounds = [0, ...gridLinesState.rowLines, cropBoxState.h].map(y => Math.round(y * scaleRatio));
                 const origCropX = Math.round(cropBoxState.x * scaleRatio);
                 const origCropY = Math.round(cropBoxState.y * scaleRatio);
-                const origCropW = Math.round(cropBoxState.w * scaleRatio);
-                const origCropH = Math.round(cropBoxState.h * scaleRatio);
 
-                const cols = Math.ceil(origCropW / targetTileW);
-                const rows = Math.ceil(origCropH / targetTileH);
+                const cols = realColBounds.length - 1;
+                const rows = realRowBounds.length - 1;
                 const total = cols * rows;
 
                 if (total <= 0) {
@@ -1219,17 +1662,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (format === 'image/webp') ext = 'webp';
 
                 const sliceCanvas = document.createElement('canvas');
-                sliceCanvas.width = targetTileW;
-                sliceCanvas.height = targetTileH;
                 const sliceCtx = sliceCanvas.getContext('2d');
 
                 let processed = 0;
                 for (let r = 0; r < rows; r++) {
                     for (let c = 0; c < cols; c++) {
-                        const sx = origCropX + (c * targetTileW);
-                        const sy = origCropY + (r * targetTileH);
-                        const sw = Math.min(targetTileW, originalImg.width - sx);
-                        const sh = Math.min(targetTileH, originalImg.height - sy);
+                        const cellX = realColBounds[c];
+                        const cellY = realRowBounds[r];
+                        const cellW = Math.max(1, realColBounds[c + 1] - cellX);
+                        const cellH = Math.max(1, realRowBounds[r + 1] - cellY);
+
+                        const sx = origCropX + cellX;
+                        const sy = origCropY + cellY;
+                        const sw = Math.min(cellW, originalImg.width - sx);
+                        const sh = Math.min(cellH, originalImg.height - sy);
 
                         sliceCanvas.width = sw;
                         sliceCanvas.height = sh;
@@ -1242,9 +1688,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         );
 
                         const blob = await new Promise(res => sliceCanvas.toBlob(res, format, 0.95));
-                        const paddedRow = String(r).padStart(2, '0');
-                        const paddedCol = String(c).padStart(2, '0');
-                        const filename = `${prefix}${paddedRow}_${paddedCol}.${ext}`;
+                        const padR = String(r + 1).padStart(2, '0');
+                        const padC = String(c + 1).padStart(2, '0');
+                        const filename = `${prefix}r${padR}_c${padC}.${ext}`;
                         zip.file(filename, blob);
 
                         processed++;

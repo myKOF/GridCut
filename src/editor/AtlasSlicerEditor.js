@@ -71,7 +71,8 @@ export class AtlasSlicerEditor {
             height: Math.max(2, Math.round(s.height)),
             confidence: typeof s.confidence === 'number' ? s.confidence : 0.9,
             confidenceCategory: s.confidenceCategory || (s.confidence >= 0.8 ? 'high' : (s.confidence >= 0.5 ? 'med' : 'low')),
-            confidenceBreakdown: s.confidenceBreakdown || null
+            confidenceBreakdown: s.confidenceBreakdown || null,
+            reason: s.reason || 'enclosed by gutters'
         }));
 
         this.selectedIds.clear();
@@ -484,6 +485,7 @@ export class AtlasSlicerEditor {
             el.style.top = `${cy}px`;
             el.style.width = `${cw}px`;
             el.style.height = `${ch}px`;
+            el.title = `${s.id} (${s.width}×${s.height})\n信心度: ${Math.round((s.confidence || 0.9) * 100)}%\n檢測原因: ${s.reason || 'enclosed by gutters'}`;
 
             // 8 個縮放手柄
             const handles = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];

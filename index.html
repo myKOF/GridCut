@@ -123,7 +123,7 @@
                 <div class="input-group-row">
                     <div class="input-field">
                         <label for="enableWatershed" style="display: flex; align-items: center; cursor: pointer;" title="針對不規則/斜向沾黏 Sprite 啟用分水嶺演算法">
-                            <input type="checkbox" id="enableWatershed" checked style="width: auto; margin-right: 6px; cursor: pointer;">
+                            <input type="checkbox" id="enableWatershed" style="width: auto; margin-right: 6px; cursor: pointer;">
                             高階沾黏分離 (Watershed)
                         </label>
                     </div>
@@ -132,6 +132,31 @@
                         <input type="number" id="watershedDistance" value="14" min="6" max="64">
                     </div>
                 </div>
+
+                <!-- Stage 6: Recursive XY-Cut & Minimum Sprite Constraints -->
+                <details class="advanced-detection-details" style="margin-top: 6px; margin-bottom: 8px; font-size: 12px; border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 6px 8px; background: rgba(0,0,0,0.15);">
+                    <summary style="cursor: pointer; color: #38bdf8; font-weight: 500;"><i class="fa-solid fa-sliders"></i> 進階空間分割與約束參數</summary>
+                    <div class="input-group-row" style="margin-top: 8px;">
+                        <div class="input-field">
+                            <label for="separatorConfidence" title="XY-Cut 分割通道相對波谷跌幅門檻 (預設 0.20)">分割線信心 (0.1~0.5)</label>
+                            <input type="number" id="separatorConfidence" value="0.20" step="0.05" min="0.05" max="0.6">
+                        </div>
+                        <div class="input-field">
+                            <label for="gutterWidth" title="最小間隔空隙寬度 (px)">通道寬度 (px)</label>
+                            <input type="number" id="gutterWidth" value="1" min="1" max="16">
+                        </div>
+                    </div>
+                    <div class="input-group-row">
+                        <div class="input-field">
+                            <label for="minComponentArea" title="忽略微小噪聲連通塊的最小像素數 (預設 4)">噪聲面積門檻 (px)</label>
+                            <input type="number" id="minComponentArea" value="4" min="1" max="64">
+                        </div>
+                        <div class="input-field">
+                            <label for="occupancyThreshold" title="候選框內前景像素最低佔比 (預設 0.04)">佔用率門檻</label>
+                            <input type="number" id="occupancyThreshold" value="0.04" step="0.01" min="0.01" max="0.5">
+                        </div>
+                    </div>
+                </details>
 
                 <div class="btn-group-row">
                     <button id="runAutoDetectBtn" class="btn btn-accent btn-sm" disabled>
@@ -174,6 +199,9 @@
                         <span id="confGutterText">通道隔離: 1.0</span>
                         <span id="confDensityText">內部密度: 65%</span>
                     </div>
+                    <div class="selected-box-reason" id="boxPropReasonRow" style="font-size: 11px; color: #38bdf8; padding: 4px 6px; background: rgba(56,189,248,0.08); border-radius: 4px; border: 1px solid rgba(56,189,248,0.15); margin-top: 4px; word-break: break-all;">
+                        <span style="color: #94a3b8; margin-right: 4px;">依據:</span><span id="boxPropReasonText">-</span>
+                    </div>
                     <div class="btn-group-row compact" style="margin-top: 4px;">
                         <button id="exportSelectedBtn" class="btn btn-secondary btn-sm" title="單獨下載選中的這張圖片 (保留透明度)">
                             <i class="fa-solid fa-image"></i> 匯出選中圖
@@ -193,9 +221,12 @@
 
             <!-- Configuration: Grid Slicing Mode -->
             <div class="config-section card" id="gridConfigSection" style="display: none;">
-                <h2 class="section-title"><i class="fa-solid fa-sliders"></i> 網格切圖設定</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2 class="section-title" style="margin: 0;"><i class="fa-solid fa-sliders"></i> 網格切圖設定</h2>
+                    <span class="badge-confidence confidence-high" id="gridCustomBadge" style="font-size: 10px; display: none;">自訂非等寬網格</span>
+                </div>
                 
-                <div class="input-group-row">
+                <div class="input-group-row" style="margin-top: 10px;">
                     <div class="input-field">
                         <label for="tileWidth">單圖寬度 (px)</label>
                         <input type="number" id="tileWidth" value="128" min="8" max="4096">
@@ -205,7 +236,21 @@
                         <input type="number" id="tileHeight" value="128" min="8" max="4096">
                     </div>
                 </div>
-                <p class="section-hint"><i class="fa-solid fa-circle-info"></i> 可直接在畫面上拖曳格線進行微調</p>
+
+                <div class="btn-group-row" style="margin-top: 8px;">
+                    <button id="resetUniformGridBtn" class="btn btn-secondary btn-sm" title="依據上述輸入框將所有格線重設為均勻等寬等高">
+                        <i class="fa-solid fa-arrows-rotate"></i> 重設為等寬等高
+                    </button>
+                    <button id="clearInnerGridLinesBtn" class="btn btn-secondary btn-sm" title="移除所有內部直橫格線，僅保留外圍大裁切框">
+                        <i class="fa-regular fa-square"></i> 清空內部線
+                    </button>
+                </div>
+
+                <div class="section-hint" style="margin-top: 10px; line-height: 1.6;">
+                    <p style="margin-bottom: 4px;"><i class="fa-solid fa-arrows-left-right" style="color: #38bdf8;"></i> <strong>滑鼠懸停直/橫線</strong>：按住拖曳可個別調整每一條線的位置</p>
+                    <p style="margin-bottom: 4px;"><i class="fa-solid fa-circle-plus" style="color: #10b981;"></i> <strong>雙擊畫面 (Double Click)</strong>：在游標位置新增一條分割線</p>
+                    <p style="margin-bottom: 0;"><i class="fa-solid fa-trash-can" style="color: #ef4444;"></i> <strong>點選格線按 Delete</strong>：可刪除選中的直/橫線</p>
+                </div>
             </div>
 
             <!-- Common Export Settings -->
@@ -335,6 +380,19 @@
                             <i class="fa-solid fa-triangle-exclamation" style="color: #f59e0b;"></i> 檢查待確認框
                         </button>
                         <span class="action-divider"></span>
+                        <div class="debug-view-selector-wrap" style="display: inline-flex; align-items: center; gap: 4px;">
+                            <label for="debugViewSelect" style="font-size: 11px; color: #94a3b8; margin: 0;"><i class="fa-solid fa-layer-group"></i> 檢視:</label>
+                            <select id="debugViewSelect" class="select-sm" style="background: #1e293b; color: #f8fafc; border: 1px solid #334155; border-radius: 4px; padding: 3px 6px; font-size: 11px; outline: none; cursor: pointer;">
+                                <option value="original">1. 原始圖集 (Original)</option>
+                                <option value="mask">2. 前景遮罩 (Mask)</option>
+                                <option value="ccl">3. 連通成分 (CCL)</option>
+                                <option value="h_proj">4. 水平投影 (H-Proj)</option>
+                                <option value="v_proj">5. 垂直投影 (V-Proj)</option>
+                                <option value="gutters">6. 分割通道 (Gutters)</option>
+                                <option value="candidates">7. 候選矩形 (Candidates)</option>
+                                <option value="final">8. 最終邊界框 (Final)</option>
+                            </select>
+                        </div>
                         <button id="toggleOverlayBtn" class="btn btn-secondary btn-sm" disabled title="開啟/隱藏所有圈選框與分割線 (快捷鍵 H)">
                             <i class="fa-solid fa-eye-slash" id="toggleOverlayIcon"></i> <span id="toggleOverlayText">隱藏框線</span>
                         </button>
@@ -364,6 +422,9 @@
                 <div class="editor-wrapper" id="editorWrapper" style="display: none;">
                     <img id="sourceImage" alt="Source" draggable="false">
                     
+                    <!-- Debug Visualization Layer (Phase 7) -->
+                    <canvas id="debugCanvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; display: none;"></canvas>
+
                     <!-- Multi-Box Container Layer (for Auto-detect Mode) -->
                     <div class="multi-box-container" id="multiBoxContainer">
                         <!-- Dynamic .auto-box elements will be rendered here -->
@@ -400,12 +461,11 @@
                     <span><kbd>滾輪</kbd> 縮放</span>
                     <span><kbd>中鍵/右鍵拖曳</kbd> 平移畫布</span>
                     <span><kbd>H</kbd> 隱藏/顯示框線</span>
+                    <span><kbd>拖曳格線</kbd> 個別微調直橫線</span>
+                    <span><kbd>雙擊</kbd> 新增格線</span>
                     <span><kbd>點選</kbd> 選中框體</span>
-                    <span><kbd>拖曳</kbd> 個別移動位置</span>
-                    <span><kbd>手柄</kbd> 個別縮放尺寸</span>
                     <span><kbd>方向鍵</kbd> 1px 微調</span>
-                    <span><kbd>Shift</kbd>+<kbd>方向鍵</kbd> 10px 微調</span>
-                    <span><kbd>Delete</kbd> 刪除選中框</span>
+                    <span><kbd>Delete</kbd> 刪除選中框/線</span>
                 </div>
             </div>
 
