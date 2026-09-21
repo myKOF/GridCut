@@ -51,6 +51,13 @@ export class AtlasSlicerEditor {
         this.render();
     }
 
+    setBrushManager(manager) {
+        this.brushManager = manager;
+        if (this.brushManager) {
+            this.brushManager.onChange(() => this.render());
+        }
+    }
+
     setZoom(zoom) {
         this.zoom = zoom || 1.0;
     }
@@ -475,6 +482,14 @@ export class AtlasSlicerEditor {
                 el.classList.add('selected');
             }
 
+            if (this.brushManager) {
+                if (this.brushManager.isSpriteExcluded(s.id)) {
+                    el.classList.add('sprite-excluded');
+                } else if (this.brushManager.isSpriteIncluded(s.id)) {
+                    el.classList.add('sprite-included');
+                }
+            }
+
             // CSS 座標 = 原始影像座標 / ratio
             const cx = s.x / ratio;
             const cy = s.y / ratio;
@@ -627,6 +642,14 @@ export class AtlasSlicerEditor {
     _onBoxMouseDown(e, spriteId) {
         if (e.button === 1 || e.button === 2) return;
         if (this.isDrawingMode) return;
+
+        if (this.brushManager && this.brushManager.getTool() !== 'pointer') {
+            this.brushManager.paintSprite(spriteId);
+            this.render();
+            e.stopPropagation();
+            e.preventDefault();
+            return;
+        }
 
         const isMulti = e.shiftKey || e.ctrlKey;
         if (!this.selectedIds.has(spriteId)) {

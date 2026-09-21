@@ -324,6 +324,9 @@
                 <div class="total-badge">
                     <span>預計切出小圖張數：</span>
                     <strong id="totalCount">0</strong>
+                    <span id="brushStatsBadge" class="brush-stats-badge" style="display: none;">
+                        已排除 <span id="excludedCountNum">0</span>
+                    </span>
                 </div>
             </div>
 
@@ -409,6 +412,36 @@
                             <i class="fa-solid fa-arrows-to-eye"></i> 重設裁切範圍
                         </button>
                     </div>
+
+                    <!-- Tile Brush Toolbar (確定/取消 圖塊分割筆刷) -->
+                    <div id="brushToolbar" class="brush-toolbar" style="display: none;">
+                        <span class="action-divider"></span>
+                        <div class="brush-tool-group" role="group" aria-label="圖塊筆刷工具">
+                            <button id="brushPointerBtn" class="btn btn-secondary btn-sm brush-tool-btn active" title="指標選取/拖曳調整模式 (快捷鍵 V)">
+                                <i class="fa-solid fa-arrow-pointer"></i>
+                            </button>
+                            <button id="brushIncludeBtn" class="btn btn-secondary btn-sm brush-tool-btn btn-brush-include" title="確定產出筆刷：點擊/拖曳塗抹標為淺綠色 (確定要產出，快捷鍵 B)">
+                                <i class="fa-solid fa-paintbrush" style="color: #22c55e;"></i> <span>確定</span>
+                            </button>
+                            <button id="brushExcludeBtn" class="btn btn-secondary btn-sm brush-tool-btn btn-brush-exclude" title="取消排除筆刷：點擊/拖曳塗抹標為淺紅色 (不要產出，快捷鍵 X)">
+                                <i class="fa-solid fa-ban" style="color: #ef4444;"></i> <span>取消</span>
+                            </button>
+                            <button id="brushEraserBtn" class="btn btn-secondary btn-sm brush-tool-btn" title="橡皮擦：清除自訂標記，回歸未標記預設產出 (快捷鍵 E)">
+                                <i class="fa-solid fa-eraser"></i>
+                            </button>
+                        </div>
+                        <div class="brush-size-group" role="group" aria-label="筆刷大小">
+                            <span class="brush-size-label"><i class="fa-solid fa-expand" style="font-size: 10px;"></i> 筆刷:</span>
+                            <button class="brush-size-btn active" data-size="1" title="1×1 格 (快捷鍵 1)">1×1</button>
+                            <button class="brush-size-btn" data-size="2" title="2×2 格 (快捷鍵 2)">2×2</button>
+                            <button class="brush-size-btn" data-size="3" title="3×3 格 (快捷鍵 3)">3×3</button>
+                            <button class="brush-size-btn" data-size="4" title="4×4 格 (快捷鍵 4)">4×4</button>
+                            <button class="brush-size-btn" data-size="5" title="5×5 格 (快捷鍵 5)">5×5</button>
+                        </div>
+                        <button id="clearMarksBtn" class="btn btn-secondary btn-xs" title="清空全圖確定與取消標記">
+                            <i class="fa-solid fa-rotate-left" style="font-size: 10px;"></i> 重設標記
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -460,12 +493,13 @@
                 <div class="shortcut-hints" id="shortcutHints">
                     <span><kbd>滾輪</kbd> 縮放</span>
                     <span><kbd>中鍵/右鍵拖曳</kbd> 平移畫布</span>
-                    <span><kbd>H</kbd> 隱藏/顯示框線</span>
-                    <span><kbd>拖曳格線</kbd> 個別微調直橫線</span>
-                    <span><kbd>雙擊</kbd> 新增格線</span>
-                    <span><kbd>點選</kbd> 選中框體</span>
-                    <span><kbd>方向鍵</kbd> 1px 微調</span>
-                    <span><kbd>Delete</kbd> 刪除選中框/線</span>
+                    <span><kbd>B</kbd> 確定筆刷 (綠)</span>
+                    <span><kbd>X</kbd> 取消筆刷 (紅)</span>
+                    <span><kbd>1~5</kbd> 筆刷大小</span>
+                    <span><kbd>拖曳塗抹</kbd> 連續標記</span>
+                    <span><kbd>V</kbd> 指標模式</span>
+                    <span><kbd>H</kbd> 隱藏/顯示格線</span>
+                    <span><kbd>Delete</kbd> 刪除線條/標記</span>
                 </div>
             </div>
 

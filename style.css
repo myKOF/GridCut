@@ -894,6 +894,28 @@ select:focus {
     z-index: 50;
 }
 
+.auto-box.sprite-included {
+    background: rgba(34, 197, 94, 0.3) !important;
+    border-color: #22c55e !important;
+}
+
+.auto-box.sprite-excluded {
+    background: rgba(239, 68, 68, 0.4) !important;
+    border-color: #ef4444 !important;
+}
+
+.auto-box.sprite-excluded::after {
+    content: '✕';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 14px;
+    font-weight: bold;
+    color: #f87171;
+    pointer-events: none;
+}
+
 /* ============================================================
    GRID MODE SELECTION & CROP BOX
 ============================================================ */
@@ -1069,3 +1091,117 @@ kbd {
 .sidebar::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.2);
 }
+
+/* Tile Brush Toolbar Styles */
+.brush-toolbar {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: var(--border-radius-sm);
+    padding: 2px 8px;
+}
+
+.brush-tool-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.brush-tool-btn {
+    padding: 4px 8px;
+    font-size: 11px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: #1e293b;
+    color: var(--text-muted);
+    transition: all 0.15s ease;
+    cursor: pointer;
+}
+
+.brush-tool-btn:hover {
+    background: #334155;
+    color: var(--text-main);
+}
+
+.brush-tool-btn.active {
+    background: rgba(56, 189, 248, 0.15);
+    border-color: var(--cyan);
+    color: var(--cyan);
+    box-shadow: 0 0 8px rgba(6, 182, 212, 0.3);
+}
+
+.brush-tool-btn.btn-brush-include.active {
+    background: rgba(34, 197, 94, 0.2);
+    border-color: #22c55e;
+    color: #4ade80;
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.35);
+}
+
+.brush-tool-btn.btn-brush-exclude.active {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: #ef4444;
+    color: #f87171;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.35);
+}
+
+.brush-size-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    padding: 1px 3px;
+}
+
+.brush-size-label {
+    font-size: 10px;
+    color: #94a3b8;
+    margin-right: 2px;
+    font-weight: 500;
+}
+
+.brush-size-btn {
+    border: none;
+    background: transparent;
+    color: #94a3b8;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 5px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.brush-size-btn:hover {
+    background: #334155;
+    color: #f8fafc;
+}
+
+.brush-size-btn.active {
+    background: var(--primary);
+    color: #ffffff;
+    box-shadow: 0 0 6px rgba(59, 130, 246, 0.4);
+}
+
+.brush-stats-badge {
+    font-size: 11px;
+    margin-left: 6px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(239, 68, 68, 0.18);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    font-weight: 500;
+}
+
+/* Crop box in brush painting mode */
+.crop-box.brush-mode {
+    cursor: crosshair !important;
+}
+
+.crop-box.brush-mode .handle {
+    pointer-events: none;
+}
