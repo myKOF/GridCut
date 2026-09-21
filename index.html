@@ -335,12 +335,18 @@
                             <i class="fa-solid fa-triangle-exclamation" style="color: #f59e0b;"></i> 檢查待確認框
                         </button>
                         <span class="action-divider"></span>
+                        <button id="toggleOverlayBtn" class="btn btn-secondary btn-sm" disabled title="開啟/隱藏所有圈選框與分割線 (快捷鍵 H)">
+                            <i class="fa-solid fa-eye-slash" id="toggleOverlayIcon"></i> <span id="toggleOverlayText">隱藏框線</span>
+                        </button>
                         <button id="clearBoxesBtn" class="btn btn-secondary btn-sm" disabled title="清空畫面上所有框體">
                             <i class="fa-solid fa-trash-can"></i> 清空
                         </button>
                     </div>
                     <!-- Actions for Grid Mode -->
                     <div id="gridActions" style="display: none;">
+                        <button id="toggleGridOverlayBtn" class="btn btn-secondary btn-sm" disabled title="開啟/隱藏網格分割線 (快捷鍵 H)">
+                            <i class="fa-solid fa-eye-slash" id="toggleGridOverlayIcon"></i> <span id="toggleGridOverlayText">隱藏格線</span>
+                        </button>
                         <button id="resetCropBtn" class="btn btn-secondary" disabled>
                             <i class="fa-solid fa-arrows-to-eye"></i> 重設裁切範圍
                         </button>
@@ -393,6 +399,7 @@
                 <div class="shortcut-hints" id="shortcutHints">
                     <span><kbd>滾輪</kbd> 縮放</span>
                     <span><kbd>中鍵/右鍵拖曳</kbd> 平移畫布</span>
+                    <span><kbd>H</kbd> 隱藏/顯示框線</span>
                     <span><kbd>點選</kbd> 選中框體</span>
                     <span><kbd>拖曳</kbd> 個別移動位置</span>
                     <span><kbd>手柄</kbd> 個別縮放尺寸</span>

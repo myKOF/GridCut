@@ -48,6 +48,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const toggleDrawBoxBtn = document.getElementById('toggleDrawBoxBtn');
     const drawBoxHeaderBtn = document.getElementById('drawBoxHeaderBtn');
     const watershedHeaderBtn = document.getElementById('watershedHeaderBtn');
+    const toggleOverlayBtn = document.getElementById('toggleOverlayBtn');
+    const toggleOverlayIcon = document.getElementById('toggleOverlayIcon');
+    const toggleOverlayText = document.getElementById('toggleOverlayText');
+    const toggleGridOverlayBtn = document.getElementById('toggleGridOverlayBtn');
+    const toggleGridOverlayIcon = document.getElementById('toggleGridOverlayIcon');
+    const toggleGridOverlayText = document.getElementById('toggleGridOverlayText');
     const clearBoxesBtn = document.getElementById('clearBoxesBtn');
     const undoBtn = document.getElementById('undoBtn');
     const redoBtn = document.getElementById('redoBtn');
@@ -284,6 +290,9 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleDrawBoxBtn.disabled = false;
         drawBoxHeaderBtn.disabled = false;
         clearBoxesBtn.disabled = false;
+        if (toggleOverlayBtn) toggleOverlayBtn.disabled = false;
+        if (toggleGridOverlayBtn) toggleGridOverlayBtn.disabled = false;
+        toggleOverlayVisibility(false);
 
         statusDot.classList.add('active');
         statusText.textContent = `圖片載入成功 (${originalImg.width} × ${originalImg.height} px)`;
@@ -508,6 +517,59 @@ document.addEventListener('DOMContentLoaded', () => {
         splitSelectedWatershedBtn.addEventListener('click', triggerWatershedSplit);
     }
 
+    // Toggle Overlay (All Boxes & Lines) Visibility
+    let isOverlayHidden = false;
+
+    function toggleOverlayVisibility(forceState) {
+        if (!originalImg) return;
+        isOverlayHidden = (typeof forceState === 'boolean') ? forceState : !isOverlayHidden;
+
+        if (isOverlayHidden) {
+            multiBoxContainer.classList.add('overlay-hidden');
+            cropBox.classList.add('overlay-hidden');
+            shadingOverlay.classList.add('overlay-hidden');
+
+            if (toggleOverlayBtn) {
+                toggleOverlayBtn.classList.add('btn-active-toggle');
+                if (toggleOverlayIcon) toggleOverlayIcon.className = 'fa-solid fa-eye';
+                if (toggleOverlayText) toggleOverlayText.textContent = '顯示框線';
+                toggleOverlayBtn.title = '顯示所有圈選框與分割線 (快捷鍵 H)';
+            }
+            if (toggleGridOverlayBtn) {
+                toggleGridOverlayBtn.classList.add('btn-active-toggle');
+                if (toggleGridOverlayIcon) toggleGridOverlayIcon.className = 'fa-solid fa-eye';
+                if (toggleGridOverlayText) toggleGridOverlayText.textContent = '顯示格線';
+                toggleGridOverlayBtn.title = '顯示網格分割線 (快捷鍵 H)';
+            }
+            statusText.textContent = '已隱藏所有圈選框與分割線 (檢視純淨原圖中，按 H 鍵恢復顯示)';
+        } else {
+            multiBoxContainer.classList.remove('overlay-hidden');
+            cropBox.classList.remove('overlay-hidden');
+            shadingOverlay.classList.remove('overlay-hidden');
+
+            if (toggleOverlayBtn) {
+                toggleOverlayBtn.classList.remove('btn-active-toggle');
+                if (toggleOverlayIcon) toggleOverlayIcon.className = 'fa-solid fa-eye-slash';
+                if (toggleOverlayText) toggleOverlayText.textContent = '隱藏框線';
+                toggleOverlayBtn.title = '開啟/隱藏所有圈選框與分割線 (快捷鍵 H)';
+            }
+            if (toggleGridOverlayBtn) {
+                toggleGridOverlayBtn.classList.remove('btn-active-toggle');
+                if (toggleGridOverlayIcon) toggleGridOverlayIcon.className = 'fa-solid fa-eye-slash';
+                if (toggleGridOverlayText) toggleGridOverlayText.textContent = '隱藏格線';
+                toggleGridOverlayBtn.title = '開啟/隱藏網格分割線 (快捷鍵 H)';
+            }
+            statusText.textContent = '已恢復顯示所有圈選框與分割線';
+        }
+    }
+
+    if (toggleOverlayBtn) {
+        toggleOverlayBtn.addEventListener('click', () => toggleOverlayVisibility());
+    }
+    if (toggleGridOverlayBtn) {
+        toggleGridOverlayBtn.addEventListener('click', () => toggleOverlayVisibility());
+    }
+
     // Clear all boxes
     clearBoxesBtn.addEventListener('click', () => {
         const sprites = slicerEditor.getSprites();
@@ -622,6 +684,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     slicerEditor.undo();
                 }
+                return;
+            }
+
+            // H: Toggle Overlay Visibility
+            if (e.key === 'h' || e.key === 'H') {
+                e.preventDefault();
+                toggleOverlayVisibility();
                 return;
             }
 

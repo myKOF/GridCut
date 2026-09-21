@@ -779,8 +779,27 @@ select:focus {
     z-index: 10;
 }
 
+.multi-box-container.overlay-hidden {
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+.crop-box.overlay-hidden,
+.shading-overlay.overlay-hidden {
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
 .multi-box-container.drawing-mode {
     cursor: crosshair !important;
+}
+
+.btn-active-toggle {
+    background: rgba(245, 158, 11, 0.25) !important;
+    border-color: #f59e0b !important;
+    color: #fbbf24 !important;
 }
 
 /* Independent Box element */
