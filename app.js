@@ -128,6 +128,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const gridCanvas = document.getElementById('gridCanvas');
     const gridCtx = gridCanvas ? gridCanvas.getContext('2d') : null;
     const gridSvg = document.getElementById('gridSvg');
+    const bgCheckerCanvas = document.getElementById('bgCheckerCanvas');
+    const bgCheckerCtx = bgCheckerCanvas ? bgCheckerCanvas.getContext('2d') : null;
+    const checkerControlWrap = document.getElementById('checkerControlWrap');
+    const checkerColorBtn = document.getElementById('checkerColorBtn');
+    const checkerColorPopover = document.getElementById('checkerColorPopover');
+    const closeCheckerColorBtn = document.getElementById('closeCheckerColorBtn');
+    const checkerColor1Input = document.getElementById('checkerColor1Input');
+    const checkerColor1Val = document.getElementById('checkerColor1Val');
+    const checkerColor2Input = document.getElementById('checkerColor2Input');
+    const checkerColor2Val = document.getElementById('checkerColor2Val');
+    const colorPresetChips = document.querySelectorAll('.color-preset-chip');
+    const checkerTileSizeInput = document.getElementById('checkerTileSizeInput');
     const viewportGridCanvas = document.getElementById('viewportGridCanvas');
     const viewportGridCtx = viewportGridCanvas ? viewportGridCanvas.getContext('2d') : null;
 
@@ -394,6 +406,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     recalculateAndDrawGrid();
                 }
             }
+            drawCheckerboard();
         }
     });
     resizeObserver.observe(sourceImage);
@@ -1438,6 +1451,230 @@ document.addEventListener('DOMContentLoaded', () => {
         drawViewportGrid();
     }
 
+    // ============================================================
+    // VIEWPORT-SPACE CHECKERBOARD RENDERER (Customizable Black/White/Colored Checkerboard)
+    // Independent of zoom scale: always strictly checkerTileSize x checkerTileSize on screen
+    // ============================================================
+    let savedTileSize = null;
+    let savedColor1 = null;
+    let savedColor2 = null;
+    try {
+        savedTileSize = parseInt(localStorage.getItem('gridcut_checker_tile_size'), 10);
+        savedColor1 = localStorage.getItem('gridcut_checker_color1');
+        savedColor2 = localStorage.getItem('gridcut_checker_color2');
+    } catch (e) {}
+
+    let checkerTileSize = (!isNaN(savedTileSize) && savedTileSize >= 1 && savedTileSize <= 128) ? savedTileSize : 3;
+    let checkerColor1 = (savedColor1 && /^#[0-9a-fA-F]{6}$/.test(savedColor1)) ? savedColor1 : '#000000';
+    let checkerColor2 = (savedColor2 && /^#[0-9a-fA-F]{6}$/.test(savedColor2)) ? savedColor2 : '#ffffff';
+
+    let checkerPattern = null;
+    let currentPatternTileSize = 0;
+    let currentPatternColor1 = '';
+    let currentPatternColor2 = '';
+
+    function getCheckerPattern(ctx) {
+        const tileSize = Math.max(1, Math.min(128, checkerTileSize));
+        if (!checkerPattern || currentPatternTileSize !== tileSize || currentPatternColor1 !== checkerColor1 || currentPatternColor2 !== checkerColor2) {
+            const blockSize = tileSize * 2;
+            const pCanvas = document.createElement('canvas');
+            pCanvas.width = blockSize;
+            pCanvas.height = blockSize;
+            const pCtx = pCanvas.getContext('2d');
+            pCtx.imageSmoothingEnabled = false;
+
+            // Fill color 2 background (cells: top-right & bottom-left)
+            pCtx.fillStyle = checkerColor2;
+            pCtx.fillRect(0, 0, blockSize, blockSize);
+
+            // Fill color 1 squares (cells: top-left & bottom-right)
+            pCtx.fillStyle = checkerColor1;
+            pCtx.fillRect(0, 0, tileSize, tileSize);
+            pCtx.fillRect(tileSize, tileSize, tileSize, tileSize);
+
+            checkerPattern = ctx.createPattern(pCanvas, 'repeat');
+            currentPatternTileSize = tileSize;
+            currentPatternColor1 = checkerColor1;
+            currentPatternColor2 = checkerColor2;
+        }
+        return checkerPattern;
+    }
+
+    function drawCheckerboard() {
+        if (!bgCheckerCanvas || !bgCheckerCtx) return;
+        if (!originalImg || !editorWrapper || editorWrapper.style.display === 'none') {
+            bgCheckerCtx.clearRect(0, 0, bgCheckerCanvas.width, bgCheckerCanvas.height);
+            return;
+        }
+
+        const cw = canvasContainer.clientWidth;
+        const ch = canvasContainer.clientHeight;
+        if (cw <= 0 || ch <= 0) return;
+
+        if (bgCheckerCanvas.width !== cw || bgCheckerCanvas.height !== ch) {
+            bgCheckerCanvas.width = cw;
+            bgCheckerCanvas.height = ch;
+            checkerPattern = null;
+        }
+
+        bgCheckerCtx.clearRect(0, 0, cw, ch);
+
+        const ew = sourceImage.clientWidth || editorWrapper.offsetWidth;
+        const eh = sourceImage.clientHeight || editorWrapper.offsetHeight;
+        if (ew <= 0 || eh <= 0) return;
+
+        const screenX = panX;
+        const screenY = panY;
+        const screenW = ew * currentZoom;
+        const screenH = eh * currentZoom;
+
+        // Skip if image is completely outside visible viewport
+        if (screenX + screenW <= 0 || screenX >= cw || screenY + screenH <= 0 || screenY >= ch) {
+            return;
+        }
+
+        const pattern = getCheckerPattern(bgCheckerCtx);
+        if (!pattern) return;
+
+        bgCheckerCtx.save();
+
+        // Lock pattern to image origin; each tileSize*tileSize square means (tileSize*2)*(tileSize*2) repeat block
+        const repeatSize = Math.max(2, checkerTileSize * 2);
+        const offsetX = ((Math.round(screenX) % repeatSize) + repeatSize) % repeatSize;
+        const offsetY = ((Math.round(screenY) % repeatSize) + repeatSize) % repeatSize;
+
+        if (pattern.setTransform) {
+            const matrix = new DOMMatrix();
+            matrix.translateSelf(offsetX, offsetY);
+            pattern.setTransform(matrix);
+        }
+
+        bgCheckerCtx.fillStyle = pattern;
+        bgCheckerCtx.fillRect(screenX, screenY, screenW, screenH);
+        bgCheckerCtx.restore();
+    }
+
+    // Checkerboard Tile Size Input Controller
+    if (checkerTileSizeInput) {
+        checkerTileSizeInput.value = checkerTileSize;
+
+        const applyCustomTileSize = (val) => {
+            if (!isNaN(val) && val >= 1 && val <= 128) {
+                checkerTileSize = val;
+                checkerPattern = null;
+                try {
+                    localStorage.setItem('gridcut_checker_tile_size', checkerTileSize);
+                } catch (e) {}
+                drawCheckerboard();
+            }
+        };
+
+        checkerTileSizeInput.addEventListener('input', () => {
+            const val = parseInt(checkerTileSizeInput.value, 10);
+            applyCustomTileSize(val);
+        });
+
+        checkerTileSizeInput.addEventListener('change', () => {
+            let val = parseInt(checkerTileSizeInput.value, 10);
+            if (isNaN(val) || val < 1) val = 1;
+            if (val > 128) val = 128;
+            checkerTileSizeInput.value = val;
+            applyCustomTileSize(val);
+        });
+    }
+
+    // Checkerboard Color Controller (Click Icon to Adjust Color)
+    function updateCheckerColorUI() {
+        if (checkerColor1Input) checkerColor1Input.value = checkerColor1;
+        if (checkerColor1Val) checkerColor1Val.textContent = checkerColor1.toUpperCase();
+        if (checkerColor2Input) checkerColor2Input.value = checkerColor2;
+        if (checkerColor2Val) checkerColor2Val.textContent = checkerColor2.toUpperCase();
+
+        if (colorPresetChips) {
+            colorPresetChips.forEach(chip => {
+                const c1 = chip.dataset.c1.toLowerCase();
+                const c2 = chip.dataset.c2.toLowerCase();
+                const isMatch = (c1 === checkerColor1.toLowerCase() && c2 === checkerColor2.toLowerCase());
+                chip.classList.toggle('active', isMatch);
+            });
+        }
+    }
+
+    if (checkerColorBtn && checkerColorPopover) {
+        checkerColorBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = checkerColorPopover.style.display === 'flex';
+            checkerColorPopover.style.display = isOpen ? 'none' : 'flex';
+            if (!isOpen) {
+                updateCheckerColorUI();
+            }
+        });
+
+        if (closeCheckerColorBtn) {
+            closeCheckerColorBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                checkerColorPopover.style.display = 'none';
+            });
+        }
+
+        // Close when clicking outside
+        document.addEventListener('click', (e) => {
+            if (checkerControlWrap && !checkerControlWrap.contains(e.target)) {
+                checkerColorPopover.style.display = 'none';
+            }
+        });
+
+        // Prevent click inside popover from closing it
+        checkerColorPopover.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+
+        // Color 1 change
+        if (checkerColor1Input) {
+            const handleColor1 = (val) => {
+                checkerColor1 = val;
+                checkerPattern = null;
+                try { localStorage.setItem('gridcut_checker_color1', checkerColor1); } catch (err) {}
+                updateCheckerColorUI();
+                drawCheckerboard();
+            };
+            checkerColor1Input.addEventListener('input', (e) => handleColor1(e.target.value));
+            checkerColor1Input.addEventListener('change', (e) => handleColor1(e.target.value));
+        }
+
+        // Color 2 change
+        if (checkerColor2Input) {
+            const handleColor2 = (val) => {
+                checkerColor2 = val;
+                checkerPattern = null;
+                try { localStorage.setItem('gridcut_checker_color2', checkerColor2); } catch (err) {}
+                updateCheckerColorUI();
+                drawCheckerboard();
+            };
+            checkerColor2Input.addEventListener('input', (e) => handleColor2(e.target.value));
+            checkerColor2Input.addEventListener('change', (e) => handleColor2(e.target.value));
+        }
+
+        // Preset chips
+        if (colorPresetChips) {
+            colorPresetChips.forEach(chip => {
+                chip.addEventListener('click', () => {
+                    checkerColor1 = chip.dataset.c1;
+                    checkerColor2 = chip.dataset.c2;
+                    checkerPattern = null;
+                    try {
+                        localStorage.setItem('gridcut_checker_color1', checkerColor1);
+                        localStorage.setItem('gridcut_checker_color2', checkerColor2);
+                    } catch (err) {}
+                    updateCheckerColorUI();
+                    drawCheckerboard();
+                });
+            });
+        }
+
+        updateCheckerColorUI();
+    }
+
     // Viewport-space Grid Renderer (100% immune to CSS scale, ALWAYS crisp 1px on screen)
     function drawViewportGrid() {
         if (!viewportGridCanvas || !viewportGridCtx) return;
@@ -1827,6 +2064,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 zoomLevelDisplay.textContent = `${Math.round(currentZoom * 100)}%`;
             }
         }
+        drawCheckerboard();
         if (currentMode === 'grid') {
             drawViewportGrid();
         }
@@ -1952,6 +2190,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     window.addEventListener('resize', () => {
+        drawCheckerboard();
         if (currentMode === 'grid') {
             drawViewportGrid();
         }

@@ -451,6 +451,52 @@
                             <i class="fa-solid fa-rotate-left" style="font-size: 10px;"></i> 重設標記
                         </button>
                     </div>
+
+                    <!-- Common Controls: Checkerboard Tile Size & Color (馬賽克方格尺寸與顏色) -->
+                    <div class="common-header-controls" id="commonHeaderControls">
+                        <span class="action-divider"></span>
+                        <div class="checker-size-wrap" id="checkerControlWrap">
+                            <button type="button" id="checkerColorBtn" class="checker-color-btn" title="點擊調整馬賽克方格顏色">
+                                <i class="fa-solid fa-border-all" id="checkerIcon"></i>
+                            </button>
+                            <label for="checkerTileSizeInput" title="自訂方格尺寸 (例如填入 5 則為 5×5px)">方格:</label>
+                            <input type="number" id="checkerTileSizeInput" value="3" min="1" max="64" step="1" title="輸入馬賽克方格大小 (px)">
+                            <span class="unit">px</span>
+
+                            <!-- Checkerboard Color Picker Popover -->
+                            <div class="checker-color-popover" id="checkerColorPopover" style="display: none;">
+                                <div class="popover-header">
+                                    <span><i class="fa-solid fa-palette"></i> 馬賽克方格顏色</span>
+                                    <button type="button" id="closeCheckerColorBtn" class="popover-close-btn" title="關閉">&times;</button>
+                                </div>
+                                <div class="color-picker-row">
+                                    <div class="color-item">
+                                        <label for="checkerColor1Input">顏色 1 (深):</label>
+                                        <div class="color-input-wrap">
+                                            <input type="color" id="checkerColor1Input" value="#000000">
+                                            <span id="checkerColor1Val" class="color-val-text">#000000</span>
+                                        </div>
+                                    </div>
+                                    <div class="color-item">
+                                        <label for="checkerColor2Input">顏色 2 (淺):</label>
+                                        <div class="color-input-wrap">
+                                            <input type="color" id="checkerColor2Input" value="#ffffff">
+                                            <span id="checkerColor2Val" class="color-val-text">#ffffff</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="color-presets-row">
+                                    <span class="presets-title">快速預設風格:</span>
+                                    <div class="preset-chips">
+                                        <button type="button" class="color-preset-chip active" data-c1="#000000" data-c2="#ffffff" title="預設純黑白">黑白</button>
+                                        <button type="button" class="color-preset-chip" data-c1="#cbd5e1" data-c2="#ffffff" title="經典灰白 (PS風格)">灰白</button>
+                                        <button type="button" class="color-preset-chip" data-c1="#0f172a" data-c2="#1e293b" title="暗夜深灰">暗夜</button>
+                                        <button type="button" class="color-preset-chip" data-c1="#0f172a" data-c2="#182234" title="科技深藍">深藍</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -460,6 +506,9 @@
                     <p>尚未載入圖片，請從左側上傳</p>
                     <span class="placeholder-sub">支援整張圖集中大小不一的圖示自動識別</span>
                 </div>
+
+                <!-- Background Checkerboard (3x3px black/white, independent of zoom) -->
+                <canvas id="bgCheckerCanvas" class="bg-checker-canvas"></canvas>
 
                 <div class="editor-wrapper" id="editorWrapper" style="display: none;">
                     <img id="sourceImage" alt="Source" draggable="false">
